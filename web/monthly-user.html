@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>用户用量</title>
+    <script src="https://cdn.jsdelivr.net/npm/jquery@4.0.0/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@6.1.0/dist/echarts.min.js"></script>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="/static/i18n/zh.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" data-i18n="nav.home">首页</a>
+        <a href="/monthly-total" data-i18n="nav.total">月度总用量</a>
+        <a href="/monthly-user" data-i18n="nav.user">用户用量</a>
+        <a href="/monthly-model" data-i18n="nav.model">模型用量</a>
+        <a class="lang-switch" onclick="toggleLang()">中 | EN</a>
+    </nav>
+    <div class="container">
+        <h1 data-i18n="title.user">用户用量</h1>
+        <div class="filter">
+            <label data-i18n="common.selectMonth">选择月份：</label>
+            <input type="month" id="monthPicker">
+        </div>
+        <div class="chart-card">
+            <div id="mainChart" style="width:100%;height:500px;"></div>
+        </div>
+        <div id="detailSection" style="display:none;margin-top:20px;">
+            <div class="chart-card">
+                <h3 id="detailTitle" style="color:#2c3e50;margin-bottom:10px;"></h3>
+                <div id="detailChart" style="width:100%;height:400px;"></div>
+            </div>
+        </div>
+        <div id="userTable" style="display:none;margin-top:20px;">
+            <h3 data-i18n="user.detail" style="color:#2c3e50;margin-bottom:10px;">用户模型明细</h3>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th data-i18n="user.thUser">用户</th>
+                        <th data-i18n="user.thModel">模型</th>
+                        <th data-i18n="common.credits">AI Credits</th>
+                    </tr>
+                </thead>
+                <tbody id="userTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+    <script>
+        var mainChart, detailChart;
+        var cachedData = null;
+
+        function toggleLang() {
+            var lang = localStorage.getItem('lang') === 'en' ? 'zh' : 'en';
+            localStorage.setItem('lang', lang);
+            location.reload();
+        }
+        function applyLang() {
+            $('[data-i18n]').each(function() {
+                var key = $(this).data('i18n');
+                var val = key.split('.').reduce(function(o, k) { return o && o[k]; }, window.i18n);
+                if (val) $(this).text(val);
+            });
+        }
+
+        $(function() {
+            if (localStorage.getItem('lang') === 'en') {
+                var s = document.createElement('script');
+                s.src = '/static/i18n/en.js';
+                s.onload = function() { applyLang(); document.title = window.i18n.title.user; };
+                document.head.appendChild(s);
+            } else {
+                document.title = window.i18n.title.user;
+            }
+
+            mainChart = echarts.init(document.getElementById('mainChart'));
+            detailChart = echarts.init(document.getElementById('detailChart'));
+            $(window).resize(function() { mainChart.resize(); detailChart.resize(); });
+
+            $('#userTableBody').on('mouseenter', 'tr:not(.subtotal-row)', function() {
+                var idx = $(this).data('user-idx');
+                $('td.user-name[data-user-idx="' + idx + '"]').addClass('hover-active');
+            }).on('mouseleave', 'tr:not(.subtotal-row)', function() {
+                var idx = $(this).data('user-idx');
+                $('td.user-name[data-user-idx="' + idx + '"]').removeClass('hover-active');
+            });
+
+            var params = new URLSearchParams(window.location.search);
+            var month = params.get('month');
+            if (month) {
+                $('#monthPicker').val(month);
+                loadMonthlyUser(month);
+            }
+            $('#monthPicker').on('change', function() {
+                if (this.value) {
+                    loadMonthlyUser(this.value);
+                    history.replaceState(null, '', '?month=' + this.value);
+                }
+            });
+        });
+
+        function loadMonthlyUser(month) {
+            $.get("/api/monthly-user", {month: month}, function(data) {
+                cachedData = data;
+                var t = window.i18n;
+                var names = data.users.map(function(u) { return u.name; });
+                var totals = data.users.map(function(u) { return u.total; });
+
+                mainChart.setOption({
+                    title: { text: month + t.user.chartTitle, left: 'center' },
+                    tooltip: {
+                        trigger: 'axis',
+                        backgroundColor: 'rgba(255,255,255,0.95)',
+                        borderColor: '#e0e0e0',
+                        borderWidth: 1,
+                        textStyle: { color: '#333' },
+                        formatter: function(params) {
+                            var d = params[0];
+                            return '<b>' + d.name + '</b><br/>' + t.common.credits + ': <b>' + d.value.toLocaleString(undefined, {minimumFractionDigits:2}) + '</b>';
+                        }
+                    },
+                    grid: { left: 80, right: 30, bottom: 120, top: 60 },
+                    xAxis: { type: 'category', data: names, axisLabel: { rotate: 45, fontSize: 11 } },
+                    yAxis: { type: 'value', name: t.common.credits },
+                    series: [{
+                        type: 'bar',
+                        data: totals,
+                        barWidth: '60%',
+                        itemStyle: {
+                            borderRadius: [4, 4, 0, 0],
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: '#5dade2' },
+                                { offset: 1, color: '#2e86c1' }
+                            ])
+                        },
+                        emphasis: {
+                            itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.2)' }
+                        },
+                        label: { show: false }
+                    }]
+                }, true);
+
+                mainChart.off('click');
+                mainChart.on('click', function(params) {
+                    var user = cachedData.users.find(function(u) { return u.name === params.name; });
+                    if (!user) return;
+                    showUserDetail(user);
+                });
+
+                var html = "";
+                data.users.forEach(function(user, userIdx) {
+                    var parity = userIdx % 2 === 0 ? "odd" : "even";
+                    var totalStr = user.total.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+                    html += "<tr class='subtotal-row' data-user='" + parity + "' data-user-idx='" + userIdx + "'>";
+                    html += "<td class='user-name' rowspan='" + (user.models.length + 1) + "' data-user-idx='" + userIdx + "'>" + user.name + "</td>";
+                    html += "<td class='subtotal-label'>" + t.user.total + "</td>";
+                    html += "<td class='credits'>" + totalStr + "</td>";
+                    html += "</tr>";
+                    user.models.forEach(function(m) {
+                        html += "<tr data-user='" + parity + "' data-user-idx='" + userIdx + "'>";
+                        html += "<td>" + m.model + "</td>";
+                        html += "<td class='credits'>" + m.total.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + "</td>";
+                        html += "</tr>";
+                    });
+                });
+                $("#userTableBody").html(html);
+                $("#userTable").show();
+                $("#detailSection").hide();
+            }).fail(function() {
+                mainChart.clear();
+                $("#detailSection").hide();
+                $("#userTable").hide();
+            });
+        }
+
+        function showUserDetail(user) {
+            var t = window.i18n;
+            $("#detailTitle").text(user.name + t.user.modelDist);
+            var modelNames = user.models.map(function(m) { return m.model; });
+            var modelTotals = user.models.map(function(m) { return m.total; });
+
+            detailChart.setOption({
+                tooltip: {
+                    trigger: 'item',
+                    backgroundColor: 'rgba(255,255,255,0.95)',
+                    borderColor: '#e0e0e0',
+                    borderWidth: 1,
+                    textStyle: { color: '#333' },
+                    formatter: '{b}: {c} ({d}%)'
+                },
+                legend: { orient: 'vertical', left: 'left', top: 'middle' },
+                series: [{
+                    type: 'pie',
+                    radius: ['40%', '70%'],
+                    center: ['50%', '50%'],
+                    data: user.models.map(function(m) { return { name: m.model, value: m.total }; }),
+                    label: { formatter: '{b}\n{c} ({d}%)' },
+                    emphasis: {
+                        itemStyle: {
+                            shadowBlur: 14,
+                            shadowColor: 'rgba(0,0,0,0.3)',
+                            shadowOffsetX: 0,
+                            shadowOffsetY: 4
+                        }
+                    }
+                }]
+            }, true);
+            $("#detailSection").show();
+        }
+    </script>
+</body>
+</html>
