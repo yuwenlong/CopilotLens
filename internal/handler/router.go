@@ -38,4 +38,6 @@ func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	r.GET("/api/monthly-total", h.MonthlyTotal)
 	r.GET("/api/monthly-user", h.MonthlyUser)
 	r.GET("/api/monthly-model", h.MonthlyModel)
+	r.GET("/api/daily-user", h.DailyUser)
+	r.GET("/api/daily-model", h.DailyModel)
 }

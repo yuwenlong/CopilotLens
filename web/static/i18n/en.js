@@ -13,15 +13,21 @@ window.i18n = {
     },
     common: {
         selectMonth: 'Select Month：',
+        selectDate: 'Select Date：',
         noData: 'No data available',
         month: 'Month：',
+        date: 'Date：',
         totalCredits: 'Total AI Credits：',
         credits: 'AI Credits',
-        creditsConsumed: 'AI Credits consumed this month'
+        creditsConsumed: 'AI Credits consumed this month',
+        creditsConsumedDay: 'AI Credits consumed today',
+        monthly: 'Month',
+        daily: 'Day'
     },
     user: {
         detail: 'User Model Breakdown',
         chartTitle: ' User AI Credits Usage',
+        chartTitleDay: ' User AI Credits Usage (Daily)',
         modelDist: "'s Model Distribution",
         total: 'Total',
         thUser: 'User',
@@ -29,7 +35,15 @@ window.i18n = {
     },
     model: {
         chartTitle: ' Model AI Credits Usage',
-        pieTitle: ' Model Share'
+        chartTitleDay: ' Model AI Credits Usage (Daily)',
+        pieTitle: ' Model Share',
+        pieTitleDay: ' Model Share (Daily)'
+    },
+    total: {
+        dailyDetail: 'Daily Detail',
+        thDate: 'Date',
+        thCredits: 'AI Credits',
+        monthTotal: 'Monthly Total'
     },
     index: {
         subtitle: 'Enterprise AI Usage Monitoring & Analytics Platform',

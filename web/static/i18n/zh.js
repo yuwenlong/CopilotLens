@@ -13,15 +13,21 @@ window.i18n = {
     },
     common: {
         selectMonth: '选择月份：',
+        selectDate: '选择日期：',
         noData: '暂无数据',
         month: '月份：',
+        date: '日期：',
         totalCredits: '总 AI Credits：',
         credits: 'AI Credits',
-        creditsConsumed: '本月 AI Credits 消耗量'
+        creditsConsumed: '本月 AI Credits 消耗量',
+        creditsConsumedDay: '当日 AI Credits 消耗量',
+        monthly: '月',
+        daily: '日'
     },
     user: {
         detail: '用户模型明细',
         chartTitle: ' 用户 AI Credits 用量',
+        chartTitleDay: ' 用户 AI Credits 用量（日）',
         modelDist: ' 的模型分布',
         total: '合计',
         thUser: '用户',
@@ -29,7 +35,15 @@ window.i18n = {
     },
     model: {
         chartTitle: ' 各模型 AI Credits 用量',
-        pieTitle: ' 模型占比'
+        chartTitleDay: ' 各模型 AI Credits 用量（日）',
+        pieTitle: ' 模型占比',
+        pieTitleDay: ' 模型占比（日）'
+    },
+    total: {
+        dailyDetail: '每日明细',
+        thDate: '日期',
+        thCredits: 'AI Credits',
+        monthTotal: '本月合计'
     },
     index: {
         subtitle: '企业级 AI 用量监控与分析平台',

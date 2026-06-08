@@ -47,3 +47,50 @@ func (h *Handler) MonthlyModel(c *gin.Context) {
 
 	c.JSON(http.StatusOK, dto.MonthlyModelResponse{Month: month, Models: models})
 }
+
+func (h *Handler) DailyModel(c *gin.Context) {
+	date := c.Query("date")
+	if len(date) != 10 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "date format must be YYYY-MM-DD"})
+		return
+	}
+	month := date[:7]
+	records := client.LoadCopilotCSV(h.DataDir, month)
+
+	var filtered []dto.CopilotRecord
+	for _, r := range records {
+		if r.Date == date {
+			filtered = append(filtered, r)
+		}
+	}
+
+	type modelAgg struct {
+		total float64
+		cost  float64
+	}
+	modelAggMap := make(map[string]*modelAgg)
+
+	for _, r := range filtered {
+		ma, ok := modelAggMap[r.Model]
+		if !ok {
+			ma = &modelAgg{}
+			modelAggMap[r.Model] = ma
+		}
+		ma.total += r.AICQuantity
+		ma.cost += r.AICCost
+	}
+
+	var models []dto.ModelUsage
+	for name, ma := range modelAggMap {
+		models = append(models, dto.ModelUsage{
+			Model: name,
+			Total: client.Round2(ma.total),
+			Cost:  client.Round2(ma.cost),
+		})
+	}
+	sort.Slice(models, func(i, j int) bool {
+		return models[i].Total > models[j].Total
+	})
+
+	c.JSON(http.StatusOK, dto.MonthlyModelResponse{Month: date, Models: models})
+}
