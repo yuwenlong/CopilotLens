@@ -14,13 +14,21 @@
         <a href="/monthly-total" data-i18n="nav.total">月度总用量</a>
         <a href="/monthly-user" data-i18n="nav.user">用户用量</a>
         <a href="/monthly-model" data-i18n="nav.model">模型用量</a>
-        <a class="lang-switch" onclick="toggleLang()">中 | EN</a>
+        <a class="lang-switch" onclick="toggleLang()"><span class="lang-zh">中</span> | <span class="lang-en">EN</span></a>
     </nav>
     <div class="container">
         <h1 data-i18n="title.model">模型用量</h1>
         <div class="filter">
-            <label data-i18n="common.selectMonth">选择月份：</label>
-            <input type="month" id="monthPicker">
+            <div class="view-toggle">
+                <button class="toggle-btn active" id="btnMonthly" data-i18n="common.monthly">月</button>
+                <button class="toggle-btn" id="btnDaily" data-i18n="common.daily">日</button>
+            </div>
+            <div class="filter-group">
+                <label id="monthLabel" data-i18n="common.selectMonth">选择月份：</label>
+                <input type="month" id="monthPicker">
+                <label id="dateLabel" data-i18n="common.selectDate" style="display:none;">选择日期：</label>
+                <input type="date" id="datePicker" style="display:none;">
+            </div>
         </div>
         <div class="chart-card">
             <div id="barChart" style="width:100%;height:500px;"></div>
@@ -31,6 +39,7 @@
     </div>
     <script>
         var barChart, pieChart;
+        var currentView = 'month';
 
         function toggleLang() {
             var lang = localStorage.getItem('lang') === 'en' ? 'zh' : 'en';
@@ -44,8 +53,14 @@
                 if (val) $(this).text(val);
             });
         }
+        function updateLangSwitch() {
+            var isEn = localStorage.getItem('lang') === 'en';
+            $('.lang-zh').toggleClass('lang-active', !isEn).toggleClass('lang-inactive', isEn);
+            $('.lang-en').toggleClass('lang-active', isEn).toggleClass('lang-inactive', !isEn);
+        }
 
         $(function() {
+            updateLangSwitch();
             if (localStorage.getItem('lang') === 'en') {
                 var s = document.createElement('script');
                 s.src = '/static/i18n/en.js';
@@ -59,90 +74,151 @@
             pieChart = echarts.init(document.getElementById('pieChart'));
             $(window).resize(function() { barChart.resize(); pieChart.resize(); });
 
+            $('#btnMonthly').on('click', function() {
+                if (currentView === 'month') return;
+                currentView = 'month';
+                $(this).addClass('active');
+                $('#btnDaily').removeClass('active');
+                $('#monthLabel, #monthPicker').show();
+                $('#dateLabel, #datePicker').hide();
+                var month = $('#monthPicker').val();
+                if (month) loadMonthlyModel(month);
+                else {
+                    barChart.clear();
+                    pieChart.clear();
+                }
+            });
+
+            $('#btnDaily').on('click', function() {
+                if (currentView === 'day') return;
+                currentView = 'day';
+                $(this).addClass('active');
+                $('#btnMonthly').removeClass('active');
+                $('#dateLabel, #datePicker').show();
+                $('#monthLabel, #monthPicker').hide();
+                var date = $('#datePicker').val();
+                if (date) loadDailyModel(date);
+                else {
+                    barChart.clear();
+                    pieChart.clear();
+                }
+            });
+
             var params = new URLSearchParams(window.location.search);
             var month = params.get('month');
-            if (month) {
+            var date = params.get('date');
+            if (date) {
+                currentView = 'day';
+                $('#btnDaily').addClass('active');
+                $('#btnMonthly').removeClass('active');
+                $('#dateLabel, #datePicker').show();
+                $('#monthLabel, #monthPicker').hide();
+                $('#datePicker').val(date);
+                loadDailyModel(date);
+            } else if (month) {
                 $('#monthPicker').val(month);
                 loadMonthlyModel(month);
             }
+
             $('#monthPicker').on('change', function() {
                 if (this.value) {
                     loadMonthlyModel(this.value);
                     history.replaceState(null, '', '?month=' + this.value);
                 }
             });
+            $('#datePicker').on('change', function() {
+                if (this.value) {
+                    loadDailyModel(this.value);
+                    history.replaceState(null, '', '?date=' + this.value);
+                }
+            });
         });
 
         function loadMonthlyModel(month) {
             $.get("/api/monthly-model", {month: month}, function(data) {
-                var t = window.i18n;
-                var modelNames = data.models.map(function(m) { return m.model; });
-                var totals = data.models.map(function(m) { return m.total; });
-
-                barChart.setOption({
-                    title: { text: month + t.model.chartTitle, left: 'center' },
-                    tooltip: {
-                        trigger: 'axis',
-                        backgroundColor: 'rgba(255,255,255,0.95)',
-                        borderColor: '#e0e0e0',
-                        borderWidth: 1,
-                        textStyle: { color: '#333' },
-                        formatter: function(params) {
-                            var d = params[0];
-                            return '<b>' + d.name + '</b><br/>' + t.common.credits + ': <b>' + d.value.toLocaleString(undefined, {minimumFractionDigits:2}) + '</b>';
-                        }
-                    },
-                    grid: { left: 80, right: 30, bottom: 150, top: 60 },
-                    xAxis: { type: 'category', data: modelNames, axisLabel: { rotate: 45, fontSize: 11 } },
-                    yAxis: { type: 'value', name: t.common.credits },
-                    series: [{
-                        type: 'bar',
-                        data: totals,
-                        barWidth: '60%',
-                        itemStyle: {
-                            borderRadius: [4, 4, 0, 0],
-                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                                { offset: 0, color: '#f0a04b' },
-                                { offset: 1, color: '#e67e22' }
-                            ])
-                        },
-                        emphasis: {
-                            itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.2)' }
-                        }
-                    }]
-                }, true);
-
-                pieChart.setOption({
-                    title: { text: month + t.model.pieTitle, left: 'center' },
-                    tooltip: {
-                        trigger: 'item',
-                        backgroundColor: 'rgba(255,255,255,0.95)',
-                        borderColor: '#e0e0e0',
-                        borderWidth: 1,
-                        textStyle: { color: '#333' },
-                        formatter: '{b}: {c} ({d}%)'
-                    },
-                    legend: { orient: 'vertical', left: 'left', top: 'middle', type: 'scroll' },
-                    series: [{
-                        type: 'pie',
-                        radius: ['35%', '65%'],
-                        center: ['50%', '50%'],
-                        data: data.models.map(function(m) { return { name: m.model, value: m.total }; }),
-                        label: { formatter: '{b}\n{d}%' },
-                        emphasis: {
-                            itemStyle: {
-                                shadowBlur: 14,
-                                shadowColor: 'rgba(0,0,0,0.3)',
-                                shadowOffsetX: 0,
-                                shadowOffsetY: 4
-                            }
-                        }
-                    }]
-                }, true);
+                renderModelChart(data, month, false);
             }).fail(function() {
                 barChart.clear();
                 pieChart.clear();
             });
+        }
+
+        function loadDailyModel(date) {
+            $.get("/api/daily-model", {date: date}, function(data) {
+                renderModelChart(data, date, true);
+            }).fail(function() {
+                barChart.clear();
+                pieChart.clear();
+            });
+        }
+
+        function renderModelChart(data, period, isDaily) {
+            var t = window.i18n;
+            var modelNames = data.models.map(function(m) { return m.model; });
+            var totals = data.models.map(function(m) { return m.total; });
+            var chartTitle = isDaily ? t.model.chartTitleDay : t.model.chartTitle;
+            var pieTitle = isDaily ? t.model.pieTitleDay : t.model.pieTitle;
+
+            barChart.setOption({
+                title: { text: period + chartTitle, left: 'center' },
+                tooltip: {
+                    trigger: 'axis',
+                    backgroundColor: 'rgba(255,255,255,0.95)',
+                    borderColor: '#e0e0e0',
+                    borderWidth: 1,
+                    textStyle: { color: '#333' },
+                    formatter: function(params) {
+                        var d = params[0];
+                        return '<b>' + d.name + '</b><br/>' + t.common.credits + ': <b>' + d.value.toLocaleString(undefined, {minimumFractionDigits:2}) + '</b>';
+                    }
+                },
+                grid: { left: 80, right: 30, bottom: 150, top: 60 },
+                xAxis: { type: 'category', data: modelNames, axisLabel: { rotate: 45, fontSize: 11 } },
+                yAxis: { type: 'value', name: t.common.credits },
+                series: [{
+                    type: 'bar',
+                    data: totals,
+                    barWidth: '60%',
+                    itemStyle: {
+                        borderRadius: [4, 4, 0, 0],
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: '#f0a04b' },
+                            { offset: 1, color: '#e67e22' }
+                        ])
+                    },
+                    emphasis: {
+                        itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.2)' }
+                    }
+                }]
+            }, true);
+
+            pieChart.setOption({
+                title: { text: period + pieTitle, left: 'center' },
+                tooltip: {
+                    trigger: 'item',
+                    backgroundColor: 'rgba(255,255,255,0.95)',
+                    borderColor: '#e0e0e0',
+                    borderWidth: 1,
+                    textStyle: { color: '#333' },
+                    formatter: '{b}: {c} ({d}%)'
+                },
+                legend: { orient: 'vertical', left: 'left', top: 'middle', type: 'scroll' },
+                series: [{
+                    type: 'pie',
+                    radius: ['35%', '65%'],
+                    center: ['50%', '50%'],
+                    data: data.models.map(function(m) { return { name: m.model, value: m.total }; }),
+                    label: { formatter: '{b}\n{d}%' },
+                    emphasis: {
+                        itemStyle: {
+                            shadowBlur: 14,
+                            shadowColor: 'rgba(0,0,0,0.3)',
+                            shadowOffsetX: 0,
+                            shadowOffsetY: 4
+                        }
+                    }
+                }]
+            }, true);
         }
     </script>
 </body>

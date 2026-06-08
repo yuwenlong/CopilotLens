@@ -26,10 +26,18 @@ body {
     border: 1px solid #555;
     border-radius: 4px;
     transition: all 0.2s;
+    user-select: none;
 }
 .lang-switch:hover {
     border-color: #3498db;
+}
+.lang-switch .lang-active {
     color: #3498db;
+    font-weight: 700;
+}
+.lang-switch .lang-inactive {
+    color: #888;
+    font-weight: 400;
 }
 .container {
     max-width: 1200px;
@@ -420,4 +428,108 @@ h1 {
     .hero-banner h1 {
         font-size: 26px;
     }
+}
+
+/* ===== 日月切换 Toggle ===== */
+.view-toggle {
+    display: inline-flex;
+    background: #e8ecf1;
+    border-radius: 20px;
+    padding: 3px;
+    gap: 2px;
+}
+.toggle-btn {
+    padding: 6px 18px;
+    border: none;
+    border-radius: 18px;
+    background: transparent;
+    color: #666;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.toggle-btn:hover {
+    color: #333;
+}
+.toggle-btn.active {
+    background: #3498db;
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(52,152,219,0.3);
+}
+#datePicker {
+    padding: 10px 16px;
+    border: 2px solid #3498db;
+    border-radius: 6px;
+    font-size: 15px;
+    width: 200px;
+    cursor: pointer;
+    background: #fff;
+    transition: border-color 0.2s;
+}
+#datePicker:focus {
+    outline: none;
+    border-color: #2980b9;
+}
+
+/* ===== 每日明细表格 ===== */
+.daily-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: #fff;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    margin-top: 16px;
+    animation: tableFadeIn 0.4s ease;
+}
+.daily-table th {
+    background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+    color: #fff;
+    padding: 14px 18px;
+    text-align: left;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+.daily-table td {
+    padding: 12px 18px;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 14px;
+}
+.daily-table tr:last-child td {
+    border-bottom: none;
+}
+.daily-table tr:nth-child(even) td {
+    background: #fafafa;
+}
+.daily-table tr:nth-child(odd) td {
+    background: #f0f7ff;
+}
+.daily-table tr:hover td {
+    background: #dceafa;
+}
+.daily-table tr.total-row td {
+    background: linear-gradient(135deg, #eaf4fb, #d4eaf7);
+    font-weight: 700;
+    font-size: 15px;
+    color: #1a1a2e;
+    border-bottom: 2px solid #3498db;
+}
+.daily-table td.credits {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+.daily-table th:nth-child(2) {
+    text-align: right;
+}
+
+/* ===== 筛选栏增强 ===== */
+.filter-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
 }

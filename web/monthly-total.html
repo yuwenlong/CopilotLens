@@ -13,7 +13,7 @@
         <a href="/monthly-total" data-i18n="nav.total">月度总用量</a>
         <a href="/monthly-user" data-i18n="nav.user">用户用量</a>
         <a href="/monthly-model" data-i18n="nav.model">模型用量</a>
-        <a class="lang-switch" onclick="toggleLang()">中 | EN</a>
+        <a class="lang-switch" onclick="toggleLang()"><span class="lang-zh">中</span> | <span class="lang-en">EN</span></a>
     </nav>
     <div class="container">
         <h1 data-i18n="title.total">月度总用量</h1>
@@ -27,6 +27,18 @@
                 <div class="big-number" id="animatedNumber">0.00</div>
                 <div class="subtitle" data-i18n="common.creditsConsumed">本月 AI Credits 消耗量</div>
                 <div class="unit">AI Credits</div>
+            </div>
+            <div id="dailyDetail" style="display:none;margin-top:24px;">
+                <h3 data-i18n="total.dailyDetail" style="color:#2c3e50;margin-bottom:10px;">每日明细</h3>
+                <table class="daily-table">
+                    <thead>
+                        <tr>
+                            <th data-i18n="total.thDate">日期</th>
+                            <th data-i18n="total.thCredits">AI Credits</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dailyTableBody"></tbody>
+                </table>
             </div>
         </div>
         <p id="noData" style="display:none;color:#999;" data-i18n="common.noData">暂无数据</p>
@@ -48,10 +60,29 @@
 
         function loadMonthlyTotal(month) {
             $.get("/api/monthly-total", {month: month}, function(data) {
+                var t = window.i18n;
                 $("#heroMonth").text(data.month);
                 $("#resultBox").show();
                 $("#noData").hide();
                 animateNumber(document.getElementById('animatedNumber'), data.total);
+
+                if (data.daily && data.daily.length > 0) {
+                    var html = "";
+                    html += "<tr class='total-row'>";
+                    html += "<td>" + t.total.monthTotal + "</td>";
+                    html += "<td class='credits'>" + data.total.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + "</td>";
+                    html += "</tr>";
+                    data.daily.forEach(function(d) {
+                        html += "<tr>";
+                        html += "<td>" + d.date + "</td>";
+                        html += "<td class='credits'>" + d.total.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + "</td>";
+                        html += "</tr>";
+                    });
+                    $("#dailyTableBody").html(html);
+                    $("#dailyDetail").show();
+                } else {
+                    $("#dailyDetail").hide();
+                }
             }).fail(function() {
                 $("#resultBox").hide();
                 $("#noData").show();
@@ -70,8 +101,14 @@
                 if (val) $(this).text(val);
             });
         }
+        function updateLangSwitch() {
+            var isEn = localStorage.getItem('lang') === 'en';
+            $('.lang-zh').toggleClass('lang-active', !isEn).toggleClass('lang-inactive', isEn);
+            $('.lang-en').toggleClass('lang-active', isEn).toggleClass('lang-inactive', !isEn);
+        }
 
         $(function() {
+            updateLangSwitch();
             if (localStorage.getItem('lang') === 'en') {
                 var s = document.createElement('script');
                 s.src = '/static/i18n/en.js';

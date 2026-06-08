@@ -12,7 +12,7 @@
         <a href="/monthly-total" data-i18n="nav.total">月度总用量</a>
         <a href="/monthly-user" data-i18n="nav.user">用户用量</a>
         <a href="/monthly-model" data-i18n="nav.model">模型用量</a>
-        <a class="lang-switch" onclick="toggleLang()">中 | EN</a>
+        <a class="lang-switch" onclick="toggleLang()"><span class="lang-zh">中</span> | <span class="lang-en">EN</span></a>
     </nav>
     <div class="container">
         <div class="hero-banner">
@@ -65,7 +65,13 @@
                 if (val) $(this).text(val);
             });
         }
+        function updateLangSwitch() {
+            var isEn = localStorage.getItem('lang') === 'en';
+            $('.lang-zh').toggleClass('lang-active', !isEn).toggleClass('lang-inactive', isEn);
+            $('.lang-en').toggleClass('lang-active', isEn).toggleClass('lang-inactive', !isEn);
+        }
         $(function() {
+            updateLangSwitch();
             if (localStorage.getItem('lang') === 'en') {
                 var s = document.createElement('script');
                 s.src = '/static/i18n/en.js';
