@@ -51,11 +51,11 @@ func LoadCopilotCSV(dataDir, month string) []dto.CopilotRecord {
 
 	var records []dto.CopilotRecord
 	for i, row := range rows {
-		if i == 0 || len(row) < 17 {
+		if i == 0 || len(row) < 9 {
 			continue
 		}
-		qty, _ := strconv.ParseFloat(row[15], 64)
-		cost, _ := strconv.ParseFloat(row[16], 64)
+		qty, _ := strconv.ParseFloat(row[5], 64)
+		cost, _ := strconv.ParseFloat(row[8], 64)
 		records = append(records, dto.CopilotRecord{
 			Date:        row[0],
 			Username:    row[1],
