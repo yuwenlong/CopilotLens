@@ -64,7 +64,14 @@
             if (localStorage.getItem('lang') === 'en') {
                 var s = document.createElement('script');
                 s.src = '/static/i18n/en.js';
-                s.onload = function() { applyLang(); document.title = window.i18n.title.model; };
+                s.onload = function() {
+                    applyLang();
+                    document.title = window.i18n.title.model;
+                    var currentMonth = $('#monthPicker').val();
+                    var currentDate = $('#datePicker').val();
+                    if (currentView === 'day' && currentDate) loadDailyModel(currentDate);
+                    else if (currentMonth) loadMonthlyModel(currentMonth);
+                };
                 document.head.appendChild(s);
             } else {
                 document.title = window.i18n.title.model;
@@ -97,11 +104,12 @@
                 $('#dateLabel, #datePicker').show();
                 $('#monthLabel, #monthPicker').hide();
                 var date = $('#datePicker').val();
-                if (date) loadDailyModel(date);
-                else {
-                    barChart.clear();
-                    pieChart.clear();
+                if (!date) {
+                    date = new Date().toISOString().slice(0, 10);
+                    $('#datePicker').val(date);
                 }
+                loadDailyModel(date);
+                history.replaceState(null, '', '?date=' + date);
             });
 
             var params = new URLSearchParams(window.location.search);
@@ -114,6 +122,7 @@
                 $('#dateLabel, #datePicker').show();
                 $('#monthLabel, #monthPicker').hide();
                 $('#datePicker').val(date);
+                $('#monthPicker').val(date.slice(0, 7));
                 loadDailyModel(date);
             } else if (month) {
                 $('#monthPicker').val(month);
