@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>月度总用量</title>
     <script src="https://cdn.jsdelivr.net/npm/jquery@4.0.0/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@6.1.0/dist/echarts.min.js"></script>
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="/static/i18n/zh.js"></script>
 </head>
@@ -28,6 +29,11 @@
                 <div class="subtitle" data-i18n="common.creditsConsumed">本月 AI Credits 消耗量</div>
                 <div class="unit">AI Credits</div>
             </div>
+            <div id="dailyChartContainer" style="display:none;margin-top:24px;">
+                <div class="chart-card">
+                    <div id="dailyChart" style="width:100%;height:400px;"></div>
+                </div>
+            </div>
             <div id="dailyDetail" style="display:none;margin-top:24px;">
                 <h3 data-i18n="total.dailyDetail" style="color:#2c3e50;margin-bottom:10px;">每日明细</h3>
                 <table class="daily-table">
@@ -44,6 +50,8 @@
         <p id="noData" style="display:none;color:#999;" data-i18n="common.noData">暂无数据</p>
     </div>
     <script>
+        var dailyChart;
+
         function animateNumber(el, target) {
             var duration = 1500;
             var start = performance.now();
@@ -67,6 +75,88 @@
                 animateNumber(document.getElementById('animatedNumber'), data.total);
 
                 if (data.daily && data.daily.length > 0) {
+                    $("#dailyChartContainer").show();
+                    if (!dailyChart) dailyChart = echarts.init(document.getElementById('dailyChart'));
+                    dailyChart.resize();
+                    var chartDates = data.daily.slice().reverse().map(function(d) { return d.date.slice(5); });
+                    var chartValues = data.daily.slice().reverse().map(function(d) { return d.total; });
+                    dailyChart.setOption({
+                        title: {
+                            text: data.month + ' ' + t.total.chartTitle,
+                            subtext: t.total.monthTotal + ': ' + data.total.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + ' AI Credits',
+                            left: 'center',
+                            top: 8,
+                            textStyle: { fontSize: 16, fontWeight: 600, color: '#2c3e50' },
+                            subtextStyle: { fontSize: 12, color: '#7f8c8d' }
+                        },
+                        tooltip: {
+                            trigger: 'axis',
+                            backgroundColor: 'rgba(255,255,255,0.96)',
+                            borderColor: '#e0e0e0',
+                            borderWidth: 1,
+                            borderRadius: 8,
+                            shadowBlur: 12,
+                            shadowColor: 'rgba(0,0,0,0.1)',
+                            textStyle: { color: '#333' },
+                            formatter: function(params) {
+                                var d = params[0];
+                                return '<div style="font-weight:600;margin-bottom:4px;">' + d.name + '</div>' +
+                                    t.common.credits + ': <b style="color:#2e86c1">' + d.value.toLocaleString(undefined, {minimumFractionDigits:2}) + '</b>';
+                            }
+                        },
+                        grid: { left: 80, right: 40, bottom: 50, top: 80 },
+                        xAxis: {
+                            type: 'category',
+                            data: chartDates,
+                            axisLabel: { rotate: 30, fontSize: 11, color: '#666' },
+                            axisLine: { lineStyle: { color: '#ddd' } },
+                            axisTick: { show: false }
+                        },
+                        yAxis: {
+                            type: 'value',
+                            name: t.common.credits,
+                            nameTextStyle: { color: '#999', fontSize: 11 },
+                            splitLine: { lineStyle: { type: 'dashed', color: '#eee' } },
+                            axisLine: { show: false },
+                            axisTick: { show: false }
+                        },
+                        series: [{
+                            type: 'line',
+                            data: chartValues,
+                            smooth: 0.3,
+                            symbol: 'circle',
+                            symbolSize: 6,
+                            lineStyle: {
+                                width: 2.5,
+                                color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                                    { offset: 0, color: '#2e86c1' },
+                                    { offset: 1, color: '#48c9b0' }
+                                ]),
+                                shadowBlur: 8,
+                                shadowColor: 'rgba(46,134,193,0.3)',
+                                shadowOffsetY: 4
+                            },
+                            itemStyle: {
+                                color: '#fff',
+                                borderColor: '#2e86c1',
+                                borderWidth: 2
+                            },
+                            emphasis: {
+                                itemStyle: { symbolSize: 10, borderColor: '#2e86c1', borderWidth: 3 }
+                            },
+                            areaStyle: {
+                                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                    { offset: 0, color: 'rgba(46,134,193,0.25)' },
+                                    { offset: 0.5, color: 'rgba(46,134,193,0.08)' },
+                                    { offset: 1, color: 'rgba(46,134,193,0)' }
+                                ])
+                            },
+
+                        }],
+                        animationDuration: 1500,
+                        animationDurationUpdate: 800
+                    }, true);
+
                     var html = "";
                     html += "<tr class='total-row'>";
                     html += "<td>" + t.total.monthTotal + "</td>";
@@ -82,6 +172,7 @@
                     $("#dailyDetail").show();
                 } else {
                     $("#dailyDetail").hide();
+                    $("#dailyChartContainer").hide();
                 }
             }).fail(function() {
                 $("#resultBox").hide();
@@ -120,16 +211,21 @@
 
             var params = new URLSearchParams(window.location.search);
             var month = params.get('month');
-            if (month) {
-                $('#monthPicker').val(month);
-                loadMonthlyTotal(month);
+            if (!month) {
+                month = new Date().toISOString().slice(0, 7);
             }
+            $('#monthPicker').val(month);
+            loadMonthlyTotal(month);
+            history.replaceState(null, '', '?month=' + month);
+
             $('#monthPicker').on('change', function() {
                 if (this.value) {
                     loadMonthlyTotal(this.value);
                     history.replaceState(null, '', '?month=' + this.value);
                 }
             });
+
+            $(window).resize(function() { if (dailyChart) dailyChart.resize(); });
         });
     </script>
 </body>

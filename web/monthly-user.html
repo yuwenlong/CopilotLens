@@ -145,6 +145,14 @@
             } else if (month) {
                 $('#monthPicker').val(month);
                 loadMonthlyUser(month);
+            } else {
+                var now = new Date();
+                var currentMonth = now.toISOString().slice(0, 7);
+                var currentDate = now.toISOString().slice(0, 10);
+                $('#monthPicker').val(currentMonth);
+                $('#datePicker').val(currentDate);
+                loadMonthlyUser(currentMonth);
+                history.replaceState(null, '', '?month=' + currentMonth);
             }
 
             $('#monthPicker').on('change', function() {

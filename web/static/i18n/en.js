@@ -43,7 +43,8 @@ window.i18n = {
         dailyDetail: 'Daily Detail',
         thDate: 'Date',
         thCredits: 'AI Credits',
-        monthTotal: 'Monthly Total'
+        monthTotal: 'Monthly Total',
+        chartTitle: 'Daily Usage Trend'
     },
     index: {
         subtitle: 'Enterprise AI Usage Monitoring & Analytics Platform',

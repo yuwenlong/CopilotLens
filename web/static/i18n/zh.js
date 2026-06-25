@@ -43,7 +43,8 @@ window.i18n = {
         dailyDetail: '每日明细',
         thDate: '日期',
         thCredits: 'AI Credits',
-        monthTotal: '本月合计'
+        monthTotal: '本月合计',
+        chartTitle: '每日用量趋势'
     },
     index: {
         subtitle: '企业级 AI 用量监控与分析平台',

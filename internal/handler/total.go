@@ -27,7 +27,7 @@ func (h *Handler) MonthlyTotal(c *gin.Context) {
 		daily = append(daily, dto.DailyTotal{Date: date, Total: client.Round2(t)})
 	}
 	sort.Slice(daily, func(i, j int) bool {
-		return daily[i].Date < daily[j].Date
+		return daily[i].Date > daily[j].Date
 	})
 	c.JSON(http.StatusOK, dto.MonthlyTotalResponse{
 		Month: month,
