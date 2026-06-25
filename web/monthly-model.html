@@ -89,8 +89,10 @@
                 $('#monthLabel, #monthPicker').show();
                 $('#dateLabel, #datePicker').hide();
                 var month = $('#monthPicker').val();
-                if (month) loadMonthlyModel(month);
-                else {
+                if (month) {
+                    loadMonthlyModel(month);
+                    history.replaceState(null, '', '?month=' + month);
+                } else {
                     barChart.clear();
                     pieChart.clear();
                 }

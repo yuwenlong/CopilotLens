@@ -114,8 +114,10 @@
                 $('#monthLabel, #monthPicker').show();
                 $('#dateLabel, #datePicker').hide();
                 var month = $('#monthPicker').val();
-                if (month) loadMonthlyUser(month);
-                else {
+                if (month) {
+                    loadMonthlyUser(month);
+                    history.replaceState(null, '', '?month=' + month);
+                } else {
                     mainChart.clear();
                     $("#detailSection").hide();
                     $("#userTable").hide();
