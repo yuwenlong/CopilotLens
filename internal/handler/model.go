@@ -80,7 +80,7 @@ func (h *Handler) DailyModel(c *gin.Context) {
 		ma.cost += r.AICCost
 	}
 
-	var models []dto.ModelUsage
+	models := make([]dto.ModelUsage, 0)
 	for name, ma := range modelAggMap {
 		models = append(models, dto.ModelUsage{
 			Model: name,

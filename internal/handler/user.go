@@ -115,7 +115,7 @@ func (h *Handler) DailyUser(c *gin.Context) {
 		m.Cost += r.AICCost
 	}
 
-	var users []dto.UserUsage
+	users := make([]dto.UserUsage, 0)
 	for uname, ua := range userAgg {
 		var models []dto.UserModel
 		for _, m := range ua.models {
