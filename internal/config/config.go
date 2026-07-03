@@ -1,4 +1,4 @@
-package conf
+package config
 
 import (
 	"log"
@@ -7,8 +7,14 @@ import (
 	"github.com/spf13/viper"
 )
 
-type Config struct {
+type AppConfig struct {
 	Server ServerConfig
+	GitHub GitHubConfig
+}
+
+type GitHubConfig struct {
+	Token string
+	Org   string
 }
 
 type ServerConfig struct {
@@ -16,7 +22,11 @@ type ServerConfig struct {
 	Whitelist []string
 }
 
-var Cfg *Config
+var appConfig *AppConfig
+
+func Config() *AppConfig {
+	return appConfig
+}
 
 func init() {
 	v := viper.New()
@@ -28,8 +38,8 @@ func init() {
 		log.Fatal("读取配置失败:", err)
 	}
 
-	Cfg = new(Config)
-	if err := v.Unmarshal(Cfg); err != nil {
+	appConfig = new(AppConfig)
+	if err := v.Unmarshal(appConfig); err != nil {
 		log.Fatal("解析配置失败:", err)
 	}
 }

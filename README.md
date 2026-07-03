@@ -4,7 +4,7 @@
 
 **Enterprise AI Usage Monitoring & Analytics Platform**
 
-*Analyze GitHub Copilot AI Credits consumption with beautiful visualizations*
+*Real-time GitHub Copilot AI Credits monitoring with automatic data synchronization*
 
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go&logoColor=white)](https://golang.org/)
 [![Gin](https://img.shields.io/badge/Gin-v1.12-00E676?style=flat&logo=gin&logoColor=white)](https://gin-gonic.com/)
@@ -38,6 +38,10 @@
 | 📊 **Monthly Total** | Hero card with animated number showing total AI Credits consumed |
 | 👥 **User Usage** | Bar chart by user + model breakdown table with hover effects |
 | 🤖 **Model Usage** | Bar chart + pie chart for model distribution analysis |
+| 🔌 **GitHub API** | Automatic data sync via GitHub Billing API (no manual CSV export) |
+| ⚡ **Concurrent Fetching** | Parallel API calls for fast data loading |
+| 💾 **Smart Caching** | 1-hour TTL cache with automatic cleanup |
+| 🎨 **Loading Animation** | Full-screen overlay with CSS3 ring animation |
 | 🌐 **i18n Support** | Chinese/English toggle with localStorage persistence |
 | 🔒 **IP Whitelist** | Access control with exact IP and CIDR subnet support |
 | 📜 **Process Management** | Start/stop/restart/reload with PID file tracking |
@@ -52,6 +56,7 @@
 | ⚙️ Config | [Viper](https://github.com/spf13/viper) v1.21 + TOML |
 | 🎨 Frontend | Vanilla HTML/CSS/JS + [jQuery](https://jquery.com/) 4.0 + [ECharts](https://echarts.apache.org/) 6.1 |
 | 🌐 i18n | Custom implementation with `data-i18n` attributes |
+| 🔌 API | GitHub Billing API (AI Credit usage) |
 
 ---
 
@@ -59,7 +64,7 @@
 
 ```
 CopilotLens/
-├── main.go                          # 🚀 Entry point (24 lines)
+├── main.go                          # 🚀 Entry point + GitHub client init
 │
 ├── domain/dto/                      # 📦 Data Transfer Objects
 │   ├── copilot.go                   #    CopilotRecord
@@ -68,15 +73,22 @@ CopilotLens/
 │   └── monthly_model.go             #    ModelUsage, MonthlyModelResponse
 │
 ├── internal/                        # 🔧 Internal packages
-│   ├── client/                      #    Data loading
-│   │   └── client.go                #    LoadUsernameMap, LoadCopilotCSV, Round2
-│   ├── conf/                        #    Configuration
-│   │   └── config.go                #    Global config + IP whitelist
+│   ├── client/                      #    Data loading utilities
+│   │   └── client.go                #    LoadUsers, LoadUsernameMap, Round2
+│   ├── config/                      #    Configuration (init() auto-load)
+│   │   └── config.go                #    AppConfig + Config() getter
+│   ├── github/                      #    GitHub API client
+│   │   ├── client.go                #    Billing API + concurrent fetchers
+│   │   └── cache.go                 #    CacheManager (1h TTL, sync.RWMutex)
 │   └── handler/                     #    HTTP handlers
 │       ├── router.go                #    Route registration + IPWhitelist middleware
 │       ├── total.go                 #    MonthlyTotal handler
-│       ├── user.go                  #    MonthlyUser handler
-│       └── model.go                 #    MonthlyModel handler
+│       ├── user.go                  #    MonthlyUser + DailyUser handlers
+│       └── model.go                 #    MonthlyModel + DailyModel handlers
+│
+├── tasks/                           # ⏱️ Background tasks
+│   ├── common.go                    #    ITask interface + Init/Stop
+│   └── cache_clean.go               #    Cache expiration cleanup (10min)
 │
 ├── web/                             # 🎨 Frontend
 │   ├── index.html                   #    Homepage with hero banner
@@ -84,13 +96,12 @@ CopilotLens/
 │   ├── monthly-user.html            #    User usage charts + table
 │   ├── monthly-model.html           #    Model usage charts
 │   └── static/
-│       ├── css/style.css            #    Global styles (423 lines)
+│       ├── css/style.css            #    Global styles + loading animation
 │       └── i18n/
 │           ├── zh.js                #    Chinese translations
 │           └── en.js                #    English translations
 │
 ├── data/                            # 📊 Data files
-│   ├── copilot/                     #    Copilot usage CSVs (from GitHub)
 │   └── username.csv                 #    Username → display name mapping
 │
 ├── toml/config_template.toml        # ⚙️ Config template
@@ -107,7 +118,7 @@ CopilotLens/
 ### Prerequisites
 
 - Go 1.26 or higher
-- Git (optional)
+- GitHub Personal Access Token with `copilot` scope
 
 ### 1️⃣ Clone & Build
 
@@ -136,7 +147,10 @@ vim bin/conf/config.toml
 [server]
 port = "8080"
 whitelist = []  # Empty = allow all IPs
-# whitelist = ["127.0.0.1", "::1", "192.168.1.0/24"]
+
+[github]
+token = ""      # GitHub PAT (or set GITHUB_TOKEN env var)
+org = "your-org"  # GitHub organization name
 ```
 
 ### 3️⃣ Run
@@ -158,15 +172,29 @@ Open your browser and visit: **http://localhost:8080**
 
 ## 📊 Data Source
 
-### Copilot Usage Data
+### GitHub Billing API (Automatic)
 
-Export from GitHub:
+CopilotLens automatically fetches AI Credits usage data from the GitHub Billing API:
 
-1. Go to **GitHub Organization** → **Settings** → **Billing and licensing** → **AI usage**
-2. Or visit directly: `/organizations/{org}/settings/billing/ai_usage`
-3. Click **"Get usage report"** to export current or previous month's data
-4. Save as `YYYY-MM.csv` (e.g., `2026-06.csv`)
-5. Place in `data/copilot/` directory
+1. **Authentication**: Uses GitHub Personal Access Token with `copilot` scope
+2. **Data Source**: `GET /organizations/{org}/settings/billing/ai_credit/usage`
+3. **Auto-sync**: Data is fetched in real-time on each request
+4. **Caching**: Results cached for 1 hour to reduce API calls
+
+### Configuration
+
+Set your GitHub token via config file or environment variable:
+
+```toml
+[github]
+token = "ghp_xxxxxxxxxxxx"
+org = "your-org"
+```
+
+Or use environment variable:
+```bash
+export GITHUB_TOKEN="ghp_xxxxxxxxxxxx"
+```
 
 ### Username Mapping
 
@@ -175,7 +203,7 @@ The `data/username.csv` file maps GitHub usernames to display names:
 ```csv
 账号,姓名
 xxxxxx,xx
-yyyyyyy,yy
+yyyyyy,yy
 ```
 
 **Purpose:**
@@ -206,11 +234,15 @@ GET /api/monthly-total?month=YYYY-MM
 ```json
 {
   "month": "2026-06",
-  "total": 36754.18
+  "total": 185944.03,
+  "daily": [
+    {"date": "2026-06-30", "amount": 6429.48},
+    {"date": "2026-06-29", "amount": 6528.43}
+  ]
 }
 ```
 
-#### 2️⃣ User Usage
+#### 2️⃣ User Usage (Monthly)
 
 ```http
 GET /api/monthly-user?month=YYYY-MM
@@ -235,7 +267,15 @@ GET /api/monthly-user?month=YYYY-MM
 }
 ```
 
-#### 3️⃣ Model Usage
+#### 3️⃣ User Usage (Daily)
+
+```http
+GET /api/daily-user?date=YYYY-MM-DD
+```
+
+**Response:** Same structure as monthly, but for a single day.
+
+#### 4️⃣ Model Usage (Monthly)
 
 ```http
 GET /api/monthly-model?month=YYYY-MM
@@ -251,6 +291,14 @@ GET /api/monthly-model?month=YYYY-MM
   ]
 }
 ```
+
+#### 5️⃣ Model Usage (Daily)
+
+```http
+GET /api/daily-model?date=YYYY-MM-DD
+```
+
+**Response:** Same structure as monthly, but for a single day.
 
 ---
 
@@ -334,18 +382,10 @@ whitelist = [
 
 | Command | Description |
 |---------|-------------|
-| `./run.sh start` | Start server in background |
-| `./run.sh stop` | Stop running server |
-| `./run.sh restart` | Restart server |
-| `./run.sh reload` | Rebuild + restart |
-
-**Windows:**
-```powershell
-.\run.ps1 start
-.\run.ps1 stop
-.\run.ps1 restart
-.\run.ps1 reload
-```
+| `./run.ps1 start` | Start server in background |
+| `./run.ps1 stop` | Stop running server |
+| `./run.ps1 restart` | Restart server (no rebuild) |
+| `./run.ps1 reload` | Rebuild + restart |
 
 ### PID Management
 
@@ -364,6 +404,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 <div align="center">
 
-**Built with ❤️ using Go + Gin + ECharts**
+**Built with ❤️ using Go + Gin + ECharts + GitHub API**
 
 </div>

@@ -2,3 +2,7 @@
 port = "8080"
 whitelist = []
 # whitelist = ["127.0.0.1", "::1", "192.168.1.0/24"]
+
+[github]
+token = ""
+org = ""

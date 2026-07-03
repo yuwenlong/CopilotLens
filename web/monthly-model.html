@@ -5,8 +5,8 @@
     <title>模型用量</title>
     <script src="https://cdn.jsdelivr.net/npm/jquery@4.0.0/dist/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@6.1.0/dist/echarts.min.js"></script>
-    <link rel="stylesheet" href="/static/css/style.css">
-    <script src="/static/i18n/zh.js"></script>
+    <link rel="stylesheet" href="/static/css/style.css?v=1751529600">
+    <script src="/static/i18n/zh.js?v=1751529600"></script>
 </head>
 <body>
     <nav class="navbar">
@@ -28,6 +28,16 @@
                 <input type="month" id="monthPicker">
                 <label id="dateLabel" data-i18n="common.selectDate" style="display:none;">选择日期：</label>
                 <input type="date" id="datePicker" style="display:none;">
+            </div>
+        </div>
+        <div id="loadingBox" class="loading-overlay" style="display:none;">
+            <div class="loading-card">
+                <div class="loading-rings">
+                    <div class="ring ring-outer"></div>
+                    <div class="ring ring-middle"></div>
+                    <div class="ring ring-inner"></div>
+                </div>
+                <div class="loading-text">正在加载数据...</div>
             </div>
         </div>
         <div class="chart-card">
@@ -154,18 +164,24 @@
         });
 
         function loadMonthlyModel(month) {
+            $("#loadingBox").show();
             $.get("/api/monthly-model", {month: month}, function(data) {
-                renderModelChart(data, month, false);
+                    $("#loadingBox").hide();
+                    renderModelChart(data, month, false);
             }).fail(function() {
+                $("#loadingBox").hide();
                 barChart.clear();
                 pieChart.clear();
             });
         }
 
         function loadDailyModel(date) {
+            $("#loadingBox").show();
             $.get("/api/daily-model", {date: date}, function(data) {
-                renderModelChart(data, date, true);
+                    $("#loadingBox").hide();
+                    renderModelChart(data, date, true);
             }).fail(function() {
+                $("#loadingBox").hide();
                 barChart.clear();
                 pieChart.clear();
             });

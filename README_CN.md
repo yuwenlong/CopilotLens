@@ -4,7 +4,7 @@
 
 **企业级 AI 用量监控与分析平台**
 
-*可视化分析 GitHub Copilot AI Credits 消耗数据*
+*实时监控 GitHub Copilot AI Credits 消耗，自动同步数据*
 
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go&logoColor=white)](https://golang.org/)
 [![Gin](https://img.shields.io/badge/Gin-v1.12-00E676?style=flat&logo=gin&logoColor=white)](https://gin-gonic.com/)
@@ -38,6 +38,10 @@
 | 📊 **月度总用量** | Hero 渐变卡片 + 数字动画，直观展示本月消耗 |
 | 👥 **用户用量** | 柱状图（用户维度）+ 模型明细表（交替背景色、hover 联动） |
 | 🤖 **模型用量** | 柱状图 + 饼图，分析各模型消耗占比 |
+| 🔌 **GitHub API** | 自动通过 GitHub Billing API 同步数据（无需手动导出 CSV） |
+| ⚡ **并发获取** | 并行 API 调用，快速加载数据 |
+| 💾 **智能缓存** | 1 小时 TTL 缓存 + 自动清理 |
+| 🎨 **加载动画** | 全屏遮罩 + CSS3 三环旋转动画 |
 | 🌐 **国际化** | 中英文一键切换，localStorage 持久化 |
 | 🔒 **IP 白名单** | 支持精确 IP 和 CIDR 网段，灵活访问控制 |
 | 📜 **进程管理** | PID 文件管理，支持 start/stop/restart/reload |
@@ -52,6 +56,7 @@
 | ⚙️ 配置 | [Viper](https://github.com/spf13/viper) v1.21 + TOML |
 | 🎨 前端 | 原生 HTML/CSS/JS + [jQuery](https://jquery.com/) 4.0 + [ECharts](https://echarts.apache.org/) 6.1 |
 | 🌐 国际化 | 自研 i18n（`data-i18n` 属性 + JS 翻译文件） |
+| 🔌 API | GitHub Billing API（AI Credit 用量） |
 
 ---
 
@@ -59,7 +64,7 @@
 
 ```
 CopilotLens/
-├── main.go                          # 🚀 入口文件（24行，极简）
+├── main.go                          # 🚀 入口文件 + GitHub 客户端初始化
 │
 ├── domain/dto/                      # 📦 数据传输对象
 │   ├── copilot.go                   #    CopilotRecord
@@ -68,15 +73,22 @@ CopilotLens/
 │   └── monthly_model.go             #    ModelUsage, MonthlyModelResponse
 │
 ├── internal/                        # 🔧 内部包
-│   ├── client/                      #    数据加载
-│   │   └── client.go                #    LoadUsernameMap, LoadCopilotCSV, Round2
-│   ├── conf/                        #    配置管理
-│   │   └── config.go                #    全局配置 + IP 白名单
+│   ├── client/                      #    数据加载工具
+│   │   └── client.go                #    LoadUsers, LoadUsernameMap, Round2
+│   ├── config/                      #    配置管理（init() 自动加载）
+│   │   └── config.go                #    AppConfig + Config() getter
+│   ├── github/                      #    GitHub API 客户端
+│   │   ├── client.go                #    Billing API + 并发获取器
+│   │   └── cache.go                 #    CacheManager（1h TTL, sync.RWMutex）
 │   └── handler/                     #    HTTP 处理器
 │       ├── router.go                #    路由注册 + IPWhitelist 中间件
 │       ├── total.go                 #    月度总用量 handler
-│       ├── user.go                  #    用户用量 handler
-│       └── model.go                 #    模型用量 handler
+│       ├── user.go                  #    用户用量 + 日用量 handler
+│       └── model.go                 #    模型用量 + 日用量 handler
+│
+├── tasks/                           # ⏱️ 后台任务
+│   ├── common.go                    #    ITask 接口 + Init/Stop
+│   └── cache_clean.go               #    缓存过期清理（10分钟）
 │
 ├── web/                             # 🎨 前端资源
 │   ├── index.html                   #    首页（Hero Banner + 功能卡片）
@@ -84,13 +96,12 @@ CopilotLens/
 │   ├── monthly-user.html            #    用户用量（图表 + 明细表）
 │   ├── monthly-model.html           #    模型用量（柱状图 + 饼图）
 │   └── static/
-│       ├── css/style.css            #    全局样式（423行）
+│       ├── css/style.css            #    全局样式 + 加载动画
 │       └── i18n/
 │           ├── zh.js                #    中文翻译
 │           └── en.js                #    英文翻译
 │
 ├── data/                            # 📊 数据文件
-│   ├── copilot/                     #    GitHub 导出的 Copilot 用量 CSV
 │   └── username.csv                 #    账号→显示名称映射
 │
 ├── toml/config_template.toml        # ⚙️ 配置模板
@@ -107,7 +118,7 @@ CopilotLens/
 ### 环境要求
 
 - Go 1.26 或更高版本
-- Git（可选）
+- GitHub Personal Access Token（需 `copilot` 权限）
 
 ### 1️⃣ 克隆 & 构建
 
@@ -136,7 +147,10 @@ vim bin/conf/config.toml
 [server]
 port = "8080"
 whitelist = []  # 空数组 = 允许所有 IP
-# whitelist = ["127.0.0.1", "::1", "192.168.1.0/24"]
+
+[github]
+token = ""      # GitHub PAT（或设置 GITHUB_TOKEN 环境变量）
+org = "your-org"  # GitHub 组织名称
 ```
 
 ### 3️⃣ 运行
@@ -158,15 +172,29 @@ chmod +x run.sh
 
 ## 📊 数据来源
 
-### Copilot 用量数据
+### GitHub Billing API（自动同步）
 
-从 GitHub 官方导出：
+CopilotLens 通过 GitHub Billing API 自动获取 AI Credits 用量数据：
 
-1. 进入 **GitHub Organization** → **Settings** → **Billing and licensing** → **AI usage**
-2. 或直接访问：`/organizations/{org}/settings/billing/ai_usage`
-3. 点击 **"Get usage report"** 导出当月或上月数据
-4. 保存为 `YYYY-MM.csv` 格式（例如 `2026-06.csv`）
-5. 放入 `data/copilot/` 目录
+1. **认证方式**：使用具有 `copilot` 权限的 GitHub Personal Access Token
+2. **数据来源**：`GET /organizations/{org}/settings/billing/ai_credit/usage`
+3. **自动同步**：每次请求时实时获取数据
+4. **缓存机制**：结果缓存 1 小时，减少 API 调用
+
+### 配置方式
+
+通过配置文件或环境变量设置 GitHub Token：
+
+```toml
+[github]
+token = "ghp_xxxxxxxxxxxx"
+org = "your-org"
+```
+
+或使用环境变量：
+```bash
+export GITHUB_TOKEN="ghp_xxxxxxxxxxxx"
+```
 
 ### 用户名映射
 
@@ -175,7 +203,7 @@ chmod +x run.sh
 ```csv
 账号,姓名
 xxxxxx,xx
-yyyyyyy,yy
+yyyyyy,yy
 ```
 
 **用途：**
@@ -206,11 +234,15 @@ GET /api/monthly-total?month=YYYY-MM
 ```json
 {
   "month": "2026-06",
-  "total": 36754.18
+  "total": 185944.03,
+  "daily": [
+    {"date": "2026-06-30", "amount": 6429.48},
+    {"date": "2026-06-29", "amount": 6528.43}
+  ]
 }
 ```
 
-#### 2️⃣ 用户用量
+#### 2️⃣ 用户用量（月度）
 
 ```http
 GET /api/monthly-user?month=YYYY-MM
@@ -235,7 +267,15 @@ GET /api/monthly-user?month=YYYY-MM
 }
 ```
 
-#### 3️⃣ 模型用量
+#### 3️⃣ 用户用量（日度）
+
+```http
+GET /api/daily-user?date=YYYY-MM-DD
+```
+
+**返回示例：** 结构同月度，但为单日数据。
+
+#### 4️⃣ 模型用量（月度）
 
 ```http
 GET /api/monthly-model?month=YYYY-MM
@@ -251,6 +291,14 @@ GET /api/monthly-model?month=YYYY-MM
   ]
 }
 ```
+
+#### 5️⃣ 模型用量（日度）
+
+```http
+GET /api/daily-model?date=YYYY-MM-DD
+```
+
+**返回示例：** 结构同月度，但为单日数据。
 
 ---
 
@@ -334,18 +382,10 @@ whitelist = [
 
 | 命令 | 说明 |
 |------|------|
-| `./run.sh start` | 后台启动服务 |
-| `./run.sh stop` | 停止服务 |
-| `./run.sh restart` | 重启服务 |
-| `./run.sh reload` | 重新构建 + 重启 |
-
-**Windows：**
-```powershell
-.\run.ps1 start
-.\run.ps1 stop
-.\run.ps1 restart
-.\run.ps1 reload
-```
+| `.\run.ps1 start` | 后台启动服务 |
+| `.\run.ps1 stop` | 停止服务 |
+| `.\run.ps1 restart` | 重启服务（不重新构建） |
+| `.\run.ps1 reload` | 重新构建 + 重启 |
 
 ### PID 管理
 
@@ -364,6 +404,6 @@ whitelist = [
 
 <div align="center">
 
-**使用 Go + Gin + ECharts 构建 ❤️**
+**使用 Go + Gin + ECharts + GitHub API 构建 ❤️**
 
 </div>

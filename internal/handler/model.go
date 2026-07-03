@@ -3,6 +3,8 @@ package handler
 import (
 	"net/http"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"copilotlens/domain/dto"
@@ -15,30 +17,34 @@ func (h *Handler) MonthlyModel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "month format must be YYYY-MM"})
 		return
 	}
-	records := client.LoadCopilotCSV(h.DataDir, month)
 
-	type modelAgg struct {
-		total float64
-		cost  float64
+	parts := strings.Split(month, "-")
+	year, _ := strconv.Atoi(parts[0])
+	mon, _ := strconv.Atoi(parts[1])
+
+	items, err := client.GitHubClient.GetMonthlyUsage(year, mon)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
-	modelAggMap := make(map[string]*modelAgg)
 
-	for _, r := range records {
-		ma, ok := modelAggMap[r.Model]
+	modelMap := make(map[string]*dto.ModelUsage)
+	for _, item := range items {
+		m, ok := modelMap[item.Model]
 		if !ok {
-			ma = &modelAgg{}
-			modelAggMap[r.Model] = ma
+			m = &dto.ModelUsage{Model: item.Model}
+			modelMap[item.Model] = m
 		}
-		ma.total += r.AICQuantity
-		ma.cost += r.AICCost
+		m.Total += item.GrossQuantity
+		m.Cost += item.GrossAmount
 	}
 
 	var models []dto.ModelUsage
-	for name, ma := range modelAggMap {
+	for _, m := range modelMap {
 		models = append(models, dto.ModelUsage{
-			Model: name,
-			Total: client.Round2(ma.total),
-			Cost:  client.Round2(ma.cost),
+			Model: m.Model,
+			Total: client.Round2(m.Total),
+			Cost:  client.Round2(m.Cost),
 		})
 	}
 	sort.Slice(models, func(i, j int) bool {
@@ -54,38 +60,35 @@ func (h *Handler) DailyModel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "date format must be YYYY-MM-DD"})
 		return
 	}
-	month := date[:7]
-	records := client.LoadCopilotCSV(h.DataDir, month)
 
-	var filtered []dto.CopilotRecord
-	for _, r := range records {
-		if r.Date == date {
-			filtered = append(filtered, r)
-		}
+	parts := strings.Split(date, "-")
+	year, _ := strconv.Atoi(parts[0])
+	mon, _ := strconv.Atoi(parts[1])
+	day, _ := strconv.Atoi(parts[2])
+
+	items, err := client.GitHubClient.GetDailyUsage(year, mon, day)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 
-	type modelAgg struct {
-		total float64
-		cost  float64
-	}
-	modelAggMap := make(map[string]*modelAgg)
-
-	for _, r := range filtered {
-		ma, ok := modelAggMap[r.Model]
+	modelMap := make(map[string]*dto.ModelUsage)
+	for _, item := range items {
+		m, ok := modelMap[item.Model]
 		if !ok {
-			ma = &modelAgg{}
-			modelAggMap[r.Model] = ma
+			m = &dto.ModelUsage{Model: item.Model}
+			modelMap[item.Model] = m
 		}
-		ma.total += r.AICQuantity
-		ma.cost += r.AICCost
+		m.Total += item.GrossQuantity
+		m.Cost += item.GrossAmount
 	}
 
-	models := make([]dto.ModelUsage, 0)
-	for name, ma := range modelAggMap {
+	var models []dto.ModelUsage
+	for _, m := range modelMap {
 		models = append(models, dto.ModelUsage{
-			Model: name,
-			Total: client.Round2(ma.total),
-			Cost:  client.Round2(ma.cost),
+			Model: m.Model,
+			Total: client.Round2(m.Total),
+			Cost:  client.Round2(m.Cost),
 		})
 	}
 	sort.Slice(models, func(i, j int) bool {

@@ -4,8 +4,10 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"copilotlens/internal/conf"
+	"copilotlens/internal/config"
 )
+
+var conf = config.Config()
 
 type Handler struct {
 	DataDir string
@@ -13,7 +15,7 @@ type Handler struct {
 
 func IPWhitelist() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if !conf.Cfg.Server.IsAccessAllowed(c.ClientIP()) {
+		if !conf.Server.IsAccessAllowed(c.ClientIP()) {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "ip not allowed"})
 			return
 		}
