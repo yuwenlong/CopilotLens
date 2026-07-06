@@ -44,18 +44,19 @@ func (h *Handler) MonthlyTotal(c *gin.Context) {
 	dayItemsMap := client.GitHubClient.GetDailyUsageConcurrent(year, mon, days)
 
 	var daily []dto.DailyTotal
+	now := time.Now()
 	for d := start; d.Before(end); d = d.AddDate(0, 0, 1) {
+		if d.Year() == now.Year() && d.Month() == now.Month() && d.After(now) {
+			break
+		}
 		items, ok := dayItemsMap[d.Day()]
-		if !ok {
-			continue
-		}
 		var dayTotal float64
-		for _, item := range items {
-			dayTotal += item.GrossQuantity
+		if ok {
+			for _, item := range items {
+				dayTotal += item.GrossQuantity
+			}
 		}
-		if dayTotal > 0 {
-			daily = append(daily, dto.DailyTotal{Date: d.Format("2006-01-02"), Total: client.Round2(dayTotal)})
-		}
+		daily = append(daily, dto.DailyTotal{Date: d.Format("2006-01-02"), Total: client.Round2(dayTotal)})
 	}
 	sort.Slice(daily, func(i, j int) bool {
 		return daily[i].Date > daily[j].Date
