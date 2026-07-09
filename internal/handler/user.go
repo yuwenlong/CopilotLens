@@ -25,12 +25,10 @@ func (h *Handler) MonthlyUser(c *gin.Context) {
 	usernameMap := client.LoadUsernameMap(h.DataDir)
 	users := client.LoadUsers(h.DataDir)
 
-	itemsMap := client.GitHubClient.GetUserMonthlyUsageConcurrent(users, year, mon)
-
 	var allUsers []dto.UserUsage
 	for _, username := range users {
-		items, ok := itemsMap[username]
-		if !ok || len(items) == 0 {
+		items, err := client.GitHubClient.GetUserMonthlyUsage(username, year, mon)
+		if err != nil || len(items) == 0 {
 			continue
 		}
 		allUsers = append(allUsers, itemsToUserUsage(username, usernameMap, items))
@@ -58,12 +56,10 @@ func (h *Handler) DailyUser(c *gin.Context) {
 	usernameMap := client.LoadUsernameMap(h.DataDir)
 	users := client.LoadUsers(h.DataDir)
 
-	itemsMap := client.GitHubClient.GetUserDailyUsageConcurrent(users, year, mon, day)
-
 	var allUsers []dto.UserUsage
 	for _, username := range users {
-		items, ok := itemsMap[username]
-		if !ok || len(items) == 0 {
+		items, err := client.GitHubClient.GetUserDailyUsage(username, year, mon, day)
+		if err != nil || len(items) == 0 {
 			continue
 		}
 		allUsers = append(allUsers, itemsToUserUsage(username, usernameMap, items))

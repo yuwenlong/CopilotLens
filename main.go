@@ -27,7 +27,10 @@ func main() {
 	}
 	client.GitHubClient = github.NewClient(token, conf.GitHub.Org)
 	log.Printf("GitHub API 已启用，组织: %s", conf.GitHub.Org)
-	tasks.Init(client.GitHubClient.Cache)
+
+	warmTask := tasks.NewCacheWarmTask(client.GitHubClient)
+	warmTask.Warm()
+	tasks.Init(client.GitHubClient.Cache, client.GitHubClient)
 
 	r := gin.Default()
 	r.Use(handler.IPWhitelist())

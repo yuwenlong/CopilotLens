@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"sync"
 	"time"
 )
 
@@ -238,68 +237,4 @@ func (c *Client) GetOrgMembers() ([]string, error) {
 	return allMembers, nil
 }
 
-func (c *Client) GetDailyUsageConcurrent(year, month int, days []int) map[int][]UsageItem {
-	result := make(map[int][]UsageItem)
-	var mu sync.Mutex
-	var wg sync.WaitGroup
 
-	for _, day := range days {
-		wg.Add(1)
-		go func(d int) {
-			defer wg.Done()
-			items, err := c.GetDailyUsage(year, month, d)
-			if err != nil {
-				return
-			}
-			mu.Lock()
-			result[d] = items
-			mu.Unlock()
-		}(day)
-	}
-	wg.Wait()
-	return result
-}
-
-func (c *Client) GetUserMonthlyUsageConcurrent(users []string, year, month int) map[string][]UsageItem {
-	result := make(map[string][]UsageItem)
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-
-	for _, u := range users {
-		wg.Add(1)
-		go func(username string) {
-			defer wg.Done()
-			items, err := c.GetUserMonthlyUsage(username, year, month)
-			if err != nil {
-				return
-			}
-			mu.Lock()
-			result[username] = items
-			mu.Unlock()
-		}(u)
-	}
-	wg.Wait()
-	return result
-}
-
-func (c *Client) GetUserDailyUsageConcurrent(users []string, year, month, day int) map[string][]UsageItem {
-	result := make(map[string][]UsageItem)
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-
-	for _, u := range users {
-		wg.Add(1)
-		go func(username string) {
-			defer wg.Done()
-			items, err := c.GetUserDailyUsage(username, year, month, day)
-			if err != nil {
-				return
-			}
-			mu.Lock()
-			result[username] = items
-			mu.Unlock()
-		}(u)
-	}
-	wg.Wait()
-	return result
-}

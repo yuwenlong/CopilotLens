@@ -40,7 +40,7 @@
 | 🤖 **Model Usage** | Bar chart + pie chart for model distribution analysis |
 | 🔌 **GitHub API** | Automatic data sync via GitHub Billing API (no manual CSV export) |
 | ⚡ **Concurrent Fetching** | Parallel API calls for fast data loading |
-| 💾 **Smart Caching** | 1-hour TTL cache with automatic cleanup |
+| 💾 **Smart Caching** | 2-hour TTL cache with automatic cleanup and hourly warm-up |
 | 🎨 **Loading Animation** | Full-screen overlay with CSS3 ring animation |
 | 🌐 **i18n Support** | Chinese/English toggle with localStorage persistence |
 | 🔒 **IP Whitelist** | Access control with exact IP and CIDR subnet support |
@@ -78,8 +78,8 @@ CopilotLens/
 │   ├── config/                      #    Configuration (init() auto-load)
 │   │   └── config.go                #    AppConfig + Config() getter
 │   ├── github/                      #    GitHub API client
-│   │   ├── client.go                #    Billing API + concurrent fetchers
-│   │   └── cache.go                 #    CacheManager (1h TTL, sync.RWMutex)
+│   │   ├── client.go                #    Billing API fetchers
+│   │   └── cache.go                 #    CacheManager (2h TTL, sync.RWMutex)
 │   └── handler/                     #    HTTP handlers
 │       ├── router.go                #    Route registration + IPWhitelist middleware
 │       ├── total.go                 #    MonthlyTotal handler
@@ -88,7 +88,8 @@ CopilotLens/
 │
 ├── tasks/                           # ⏱️ Background tasks
 │   ├── common.go                    #    ITask interface + Init/Stop
-│   └── cache_clean.go               #    Cache expiration cleanup (10min)
+│   ├── cache_clean.go               #    Cache expiration cleanup (10min)
+│   └── cache_warm.go                #    Hourly cache warm-up on the hour
 │
 ├── web/                             # 🎨 Frontend
 │   ├── index.html                   #    Homepage with hero banner
@@ -178,8 +179,9 @@ CopilotLens automatically fetches AI Credits usage data from the GitHub Billing 
 
 1. **Authentication**: Uses GitHub Personal Access Token with `copilot` scope
 2. **Data Source**: `GET /organizations/{org}/settings/billing/ai_credit/usage`
-3. **Auto-sync**: Data is fetched in real-time on each request
-4. **Caching**: Results cached for 1 hour to reduce API calls
+3. **Auto-sync**: Data is fetched in real-time on each request (fallback when cache misses)
+4. **Caching**: Results cached for 2 hours to reduce API calls
+5. **Warm-up**: A scheduled task pre-fetches the current month/day data every hour on the hour, so most requests hit the cache without calling GitHub API
 
 ### Configuration
 

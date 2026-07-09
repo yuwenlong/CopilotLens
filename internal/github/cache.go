@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-const cacheTTL = 1 * time.Hour
+const cacheTTL = 120 * time.Minute
 
 type cacheEntry struct {
 	data      interface{}
