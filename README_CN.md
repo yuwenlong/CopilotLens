@@ -40,7 +40,7 @@
 | 🤖 **模型用量** | 柱状图 + 饼图，分析各模型消耗占比 |
 | 🔌 **GitHub API** | 自动通过 GitHub Billing API 同步数据（无需手动导出 CSV） |
 | ⚡ **并发获取** | 并行 API 调用，快速加载数据 |
-| 💾 **智能缓存** | 1 小时 TTL 缓存 + 自动清理 |
+| 💾 **智能缓存** | 2 小时 TTL 缓存 + 自动清理 + 每小时整点预热 |
 | 🎨 **加载动画** | 全屏遮罩 + CSS3 三环旋转动画 |
 | 🌐 **国际化** | 中英文一键切换，localStorage 持久化 |
 | 🔒 **IP 白名单** | 支持精确 IP 和 CIDR 网段，灵活访问控制 |
@@ -78,8 +78,8 @@ CopilotLens/
 │   ├── config/                      #    配置管理（init() 自动加载）
 │   │   └── config.go                #    AppConfig + Config() getter
 │   ├── github/                      #    GitHub API 客户端
-│   │   ├── client.go                #    Billing API + 并发获取器
-│   │   └── cache.go                 #    CacheManager（1h TTL, sync.RWMutex）
+│   │   ├── client.go                #    Billing API 获取器
+│   │   └── cache.go                 #    CacheManager（2h TTL, sync.RWMutex）
 │   └── handler/                     #    HTTP 处理器
 │       ├── router.go                #    路由注册 + IPWhitelist 中间件
 │       ├── total.go                 #    月度总用量 handler
@@ -88,7 +88,8 @@ CopilotLens/
 │
 ├── tasks/                           # ⏱️ 后台任务
 │   ├── common.go                    #    ITask 接口 + Init/Stop
-│   └── cache_clean.go               #    缓存过期清理（10分钟）
+│   ├── cache_clean.go               #    缓存过期清理（10分钟）
+│   └── cache_warm.go                #    每小时整点缓存预热
 │
 ├── web/                             # 🎨 前端资源
 │   ├── index.html                   #    首页（Hero Banner + 功能卡片）
@@ -178,8 +179,9 @@ CopilotLens 通过 GitHub Billing API 自动获取 AI Credits 用量数据：
 
 1. **认证方式**：使用具有 `copilot` 权限的 GitHub Personal Access Token
 2. **数据来源**：`GET /organizations/{org}/settings/billing/ai_credit/usage`
-3. **自动同步**：每次请求时实时获取数据
-4. **缓存机制**：结果缓存 1 小时，减少 API 调用
+3. **自动同步**：缓存未命中时实时获取数据
+4. **缓存机制**：结果缓存 2 小时，减少 API 调用
+5. **缓存预热**：定时任务在每个整点预拉取当前月/当前日数据，使大部分请求直接命中缓存，不再调用 GitHub API
 
 ### 配置方式
 
