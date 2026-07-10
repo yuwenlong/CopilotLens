@@ -196,21 +196,22 @@
 
         function loadMonthlyTotal(month) {
             var initial = CL.getInitialData('monthly-total');
+            var hasInitial = false;
             if (initial) {
-                CL.setLoading(false);
                 renderMonthlyTotal(initial);
-            } else {
-                CL.setLoading(true);
-                $("#resultBox").hide();
+                hasInitial = true;
             }
 
             CL.fetchWithCache('/api/monthly-total', {month: month}, {
+                initialRendered: hasInitial,
                 onSuccess: function(data) {
                     renderMonthlyTotal(data);
                 },
                 onError: function() {
-                    $("#resultBox").hide();
-                    CL.showNoData(true);
+                    if (!hasInitial) {
+                        $("#resultBox").hide();
+                        CL.showNoData(true);
+                    }
                 }
             });
         }

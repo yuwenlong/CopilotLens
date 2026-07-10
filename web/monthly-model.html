@@ -152,42 +152,46 @@
 
         function loadMonthlyModel(month) {
             var initial = CL.getInitialData('monthly-model');
+            var hasInitial = false;
             if (initial && initial.month === month) {
-                CL.setLoading(false);
                 renderModelChart(initial, month, false);
-            } else {
-                CL.setLoading(true);
+                hasInitial = true;
             }
 
             CL.fetchWithCache('/api/monthly-model', {month: month}, {
+                initialRendered: hasInitial,
                 onSuccess: function(data) {
                     renderModelChart(data, month, false);
                 },
                 onError: function() {
-                    CL.showNoData(true);
-                    barChart.clear();
-                    pieChart.clear();
+                    if (!hasInitial) {
+                        CL.showNoData(true);
+                        barChart.clear();
+                        pieChart.clear();
+                    }
                 }
             });
         }
 
         function loadDailyModel(date) {
             var initial = CL.getInitialData('daily-model');
+            var hasInitial = false;
             if (initial && initial.month === date) {
-                CL.setLoading(false);
                 renderModelChart(initial, date, true);
-            } else {
-                CL.setLoading(true);
+                hasInitial = true;
             }
 
             CL.fetchWithCache('/api/daily-model', {date: date}, {
+                initialRendered: hasInitial,
                 onSuccess: function(data) {
                     renderModelChart(data, date, true);
                 },
                 onError: function() {
-                    CL.showNoData(true);
-                    barChart.clear();
-                    pieChart.clear();
+                    if (!hasInitial) {
+                        CL.showNoData(true);
+                        barChart.clear();
+                        pieChart.clear();
+                    }
                 }
             });
         }

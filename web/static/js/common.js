@@ -133,6 +133,10 @@
         var cached = readSession(key);
         var rendered = false;
 
+        if (!options.initialRendered) {
+            CL.setLoading(true);
+        }
+
         function render(data) {
             rendered = true;
             if (typeof options.onRender === 'function') {
@@ -143,6 +147,7 @@
         }
 
         if (cached) {
+            CL.setLoading(false);
             CL.showNoData(false);
             render(cached);
         }
