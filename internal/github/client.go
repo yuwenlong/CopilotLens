@@ -4,9 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
-	"os"
+	"net/url"
+	"sort"
+	"strconv"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -50,12 +56,14 @@ type Client struct {
 	org        string
 	httpClient *http.Client
 	Cache      *CacheManager
+	sf         singleflight.Group
+
+	rateMu        sync.Mutex
+	rateRemaining int
+	rateReset     int64
 }
 
 func NewClient(token, org string) *Client {
-	if token == "" {
-		token = os.Getenv("GITHUB_TOKEN")
-	}
 	cache := NewCacheManager()
 	return &Client{
 		token:      token,
@@ -80,6 +88,19 @@ func (c *Client) doRequest(url string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
+	c.rateMu.Lock()
+	if remaining := resp.Header.Get("X-RateLimit-Remaining"); remaining != "" {
+		if v, err := strconv.Atoi(remaining); err == nil {
+			c.rateRemaining = v
+		}
+	}
+	if reset := resp.Header.Get("X-RateLimit-Reset"); reset != "" {
+		if v, err := strconv.ParseInt(reset, 10, 64); err == nil {
+			c.rateReset = v
+		}
+	}
+	c.rateMu.Unlock()
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("GitHub API error %d: %s", resp.StatusCode, string(body))
@@ -89,17 +110,22 @@ func (c *Client) doRequest(url string) ([]byte, error) {
 }
 
 func (c *Client) buildURL(path string, params map[string]string) string {
-	url := apiBase + path
+	u := apiBase + path
 	first := true
-	for k, v := range params {
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
 		if first {
-			url += "?" + k + "=" + v
+			u += "?" + k + "=" + url.QueryEscape(params[k])
 			first = false
 		} else {
-			url += "&" + k + "=" + v
+			u += "&" + k + "=" + url.QueryEscape(params[k])
 		}
 	}
-	return url
+	return u
 }
 
 func (c *Client) GetMonthlyUsage(year, month int) ([]UsageItem, error) {
@@ -108,21 +134,30 @@ func (c *Client) GetMonthlyUsage(year, month int) ([]UsageItem, error) {
 		return cached.([]UsageItem), nil
 	}
 
-	params := map[string]string{
-		"year":  fmt.Sprintf("%d", year),
-		"month": fmt.Sprintf("%d", month),
-	}
-	url := c.buildURL(fmt.Sprintf("/organizations/%s/settings/billing/ai_credit/usage", c.org), params)
-	body, err := c.doRequest(url)
+	v, err, _ := c.sf.Do(key, func() (interface{}, error) {
+		if cached, ok := c.Cache.Get(key); ok {
+			return cached.([]UsageItem), nil
+		}
+		params := map[string]string{
+			"year":  fmt.Sprintf("%d", year),
+			"month": fmt.Sprintf("%d", month),
+		}
+		url := c.buildURL(fmt.Sprintf("/organizations/%s/settings/billing/ai_credit/usage", c.org), params)
+		body, err := c.doRequest(url)
+		if err != nil {
+			return nil, err
+		}
+		var resp BillingResponse
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return nil, err
+		}
+		c.Cache.Set(key, resp.UsageItems)
+		return resp.UsageItems, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	var resp BillingResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, err
-	}
-	c.Cache.Set(key, resp.UsageItems)
-	return resp.UsageItems, nil
+	return v.([]UsageItem), nil
 }
 
 func (c *Client) GetUserMonthlyUsage(username string, year, month int) ([]UsageItem, error) {
@@ -131,22 +166,31 @@ func (c *Client) GetUserMonthlyUsage(username string, year, month int) ([]UsageI
 		return cached.([]UsageItem), nil
 	}
 
-	params := map[string]string{
-		"year":  fmt.Sprintf("%d", year),
-		"month": fmt.Sprintf("%d", month),
-		"user":  username,
-	}
-	url := c.buildURL(fmt.Sprintf("/organizations/%s/settings/billing/ai_credit/usage", c.org), params)
-	body, err := c.doRequest(url)
+	v, err, _ := c.sf.Do(key, func() (interface{}, error) {
+		if cached, ok := c.Cache.Get(key); ok {
+			return cached.([]UsageItem), nil
+		}
+		params := map[string]string{
+			"year":  fmt.Sprintf("%d", year),
+			"month": fmt.Sprintf("%d", month),
+			"user":  username,
+		}
+		url := c.buildURL(fmt.Sprintf("/organizations/%s/settings/billing/ai_credit/usage", c.org), params)
+		body, err := c.doRequest(url)
+		if err != nil {
+			return nil, err
+		}
+		var resp BillingResponse
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return nil, err
+		}
+		c.Cache.Set(key, resp.UsageItems)
+		return resp.UsageItems, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	var resp BillingResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, err
-	}
-	c.Cache.Set(key, resp.UsageItems)
-	return resp.UsageItems, nil
+	return v.([]UsageItem), nil
 }
 
 func (c *Client) GetDailyUsage(year, month, day int) ([]UsageItem, error) {
@@ -155,22 +199,31 @@ func (c *Client) GetDailyUsage(year, month, day int) ([]UsageItem, error) {
 		return cached.([]UsageItem), nil
 	}
 
-	params := map[string]string{
-		"year":  fmt.Sprintf("%d", year),
-		"month": fmt.Sprintf("%d", month),
-		"day":   fmt.Sprintf("%d", day),
-	}
-	url := c.buildURL(fmt.Sprintf("/organizations/%s/settings/billing/ai_credit/usage", c.org), params)
-	body, err := c.doRequest(url)
+	v, err, _ := c.sf.Do(key, func() (interface{}, error) {
+		if cached, ok := c.Cache.Get(key); ok {
+			return cached.([]UsageItem), nil
+		}
+		params := map[string]string{
+			"year":  fmt.Sprintf("%d", year),
+			"month": fmt.Sprintf("%d", month),
+			"day":   fmt.Sprintf("%d", day),
+		}
+		url := c.buildURL(fmt.Sprintf("/organizations/%s/settings/billing/ai_credit/usage", c.org), params)
+		body, err := c.doRequest(url)
+		if err != nil {
+			return nil, err
+		}
+		var resp BillingResponse
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return nil, err
+		}
+		c.Cache.Set(key, resp.UsageItems)
+		return resp.UsageItems, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	var resp BillingResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, err
-	}
-	c.Cache.Set(key, resp.UsageItems)
-	return resp.UsageItems, nil
+	return v.([]UsageItem), nil
 }
 
 func (c *Client) GetUserDailyUsage(username string, year, month, day int) ([]UsageItem, error) {
@@ -179,23 +232,32 @@ func (c *Client) GetUserDailyUsage(username string, year, month, day int) ([]Usa
 		return cached.([]UsageItem), nil
 	}
 
-	params := map[string]string{
-		"year":  fmt.Sprintf("%d", year),
-		"month": fmt.Sprintf("%d", month),
-		"day":   fmt.Sprintf("%d", day),
-		"user":  username,
-	}
-	url := c.buildURL(fmt.Sprintf("/organizations/%s/settings/billing/ai_credit/usage", c.org), params)
-	body, err := c.doRequest(url)
+	v, err, _ := c.sf.Do(key, func() (interface{}, error) {
+		if cached, ok := c.Cache.Get(key); ok {
+			return cached.([]UsageItem), nil
+		}
+		params := map[string]string{
+			"year":  fmt.Sprintf("%d", year),
+			"month": fmt.Sprintf("%d", month),
+			"day":   fmt.Sprintf("%d", day),
+			"user":  username,
+		}
+		url := c.buildURL(fmt.Sprintf("/organizations/%s/settings/billing/ai_credit/usage", c.org), params)
+		body, err := c.doRequest(url)
+		if err != nil {
+			return nil, err
+		}
+		var resp BillingResponse
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return nil, err
+		}
+		c.Cache.Set(key, resp.UsageItems)
+		return resp.UsageItems, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	var resp BillingResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, err
-	}
-	c.Cache.Set(key, resp.UsageItems)
-	return resp.UsageItems, nil
+	return v.([]UsageItem), nil
 }
 
 func (c *Client) GetOrgMembers() ([]string, error) {
@@ -204,37 +266,88 @@ func (c *Client) GetOrgMembers() ([]string, error) {
 		return cached.([]string), nil
 	}
 
-	var allMembers []string
-	page := 1
-	perPage := 100
-
-	for {
-		url := fmt.Sprintf("%s/orgs/%s/members?per_page=%d&page=%d", apiBase, c.org, perPage, page)
-		body, err := c.doRequest(url)
-		if err != nil {
-			return nil, err
+	v, err, _ := c.sf.Do(key, func() (interface{}, error) {
+		if cached, ok := c.Cache.Get(key); ok {
+			return cached.([]string), nil
 		}
 
-		var members []OrgMember
-		if err := json.Unmarshal(body, &members); err != nil {
-			return nil, err
-		}
-		if len(members) == 0 {
-			break
+		var allMembers []string
+		page := 1
+		perPage := 100
+
+		for {
+			if c.ShouldThrottle(50) {
+				log.Printf("GetOrgMembers: Rate limit 剩余 %d，停止分页", c.RateLimitRemaining())
+				return nil, fmt.Errorf("rate limit exhausted, partial members fetched (page %d)", page)
+			}
+			url := fmt.Sprintf("%s/orgs/%s/members?per_page=%d&page=%d", apiBase, c.org, perPage, page)
+			body, err := c.doRequest(url)
+			if err != nil {
+				return nil, err
+			}
+
+			var members []OrgMember
+			if err := json.Unmarshal(body, &members); err != nil {
+				return nil, err
+			}
+			if len(members) == 0 {
+				break
+			}
+
+			for _, m := range members {
+				allMembers = append(allMembers, m.Login)
+			}
+
+			if len(members) < perPage {
+				break
+			}
+			page++
 		}
 
-		for _, m := range members {
-			allMembers = append(allMembers, m.Login)
-		}
-
-		if len(members) < perPage {
-			break
-		}
-		page++
+		c.Cache.Set(key, allMembers)
+		return allMembers, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-
-	c.Cache.Set(key, allMembers)
-	return allMembers, nil
+	return v.([]string), nil
 }
 
+func (c *Client) RateLimitRemaining() int {
+	c.rateMu.Lock()
+	defer c.rateMu.Unlock()
+	return c.rateRemaining
+}
 
+func (c *Client) ShouldThrottle(threshold int) bool {
+	c.rateMu.Lock()
+	remaining := c.rateRemaining
+	reset := c.rateReset
+	c.rateMu.Unlock()
+	// 尚未收到任何响应（rateReset == 0），不 throttle，让调用方自行决定
+	if reset == 0 {
+		return false
+	}
+	return remaining < threshold
+}
+
+func (c *Client) CheckRateLimit() {
+	if _, err := c.doRequest(apiBase); err != nil {
+		log.Printf("CheckRateLimit 失败: %v", err)
+	}
+}
+
+func (c *Client) WaitForRateLimit() {
+	c.rateMu.Lock()
+	resetTime := time.Unix(c.rateReset, 0)
+	c.rateMu.Unlock()
+	wait := time.Until(resetTime) + 5*time.Second
+	const maxWait = 5 * time.Minute
+	if wait > maxWait {
+		wait = maxWait
+	}
+	if wait > 0 {
+		log.Printf("Rate limit 剩余 %d，等待 %v", c.RateLimitRemaining(), wait)
+		time.Sleep(wait)
+	}
+}

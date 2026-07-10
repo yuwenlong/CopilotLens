@@ -4,9 +4,13 @@
     <meta charset="UTF-8">
     <title>模型用量</title>
     <script src="https://cdn.jsdelivr.net/npm/jquery@4.0.0/dist/jquery.min.js"></script>
+    <script>if(typeof jQuery==='undefined')document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/4.0.0/jquery.min.js"><\/script>')</script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@6.1.0/dist/echarts.min.js"></script>
+    <script>if(typeof echarts==='undefined')document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/6.1.0/echarts.min.js"><\/script>')</script>
     <link rel="stylesheet" href="/static/css/style.css?v=1751529600">
     <script src="/static/i18n/zh.js?v=1751529600"></script>
+    <script src="/static/js/common.js?v=1751529600"></script>
+    {{.InitialData}}
 </head>
 <body>
     <nav class="navbar">
@@ -14,7 +18,7 @@
         <a href="/monthly-total" data-i18n="nav.total">月度总用量</a>
         <a href="/monthly-user" data-i18n="nav.user">用户用量</a>
         <a href="/monthly-model" data-i18n="nav.model">模型用量</a>
-        <a class="lang-switch" onclick="toggleLang()"><span class="lang-zh">中</span> | <span class="lang-en">EN</span></a>
+        <a class="lang-switch" onclick="CL.toggleLang()"><span class="lang-zh">中</span> | <span class="lang-en">EN</span></a>
     </nav>
     <div class="container">
         <h1 data-i18n="title.model">模型用量</h1>
@@ -46,36 +50,19 @@
         <div class="chart-card">
             <div id="pieChart" style="width:100%;height:500px;"></div>
         </div>
+        <p id="noData" style="display:none;color:#999;" data-i18n="common.noData">暂无数据</p>
     </div>
     <script>
         var barChart, pieChart;
         var currentView = 'month';
 
-        function toggleLang() {
-            var lang = localStorage.getItem('lang') === 'en' ? 'zh' : 'en';
-            localStorage.setItem('lang', lang);
-            location.reload();
-        }
-        function applyLang() {
-            $('[data-i18n]').each(function() {
-                var key = $(this).data('i18n');
-                var val = key.split('.').reduce(function(o, k) { return o && o[k]; }, window.i18n);
-                if (val) $(this).text(val);
-            });
-        }
-        function updateLangSwitch() {
-            var isEn = localStorage.getItem('lang') === 'en';
-            $('.lang-zh').toggleClass('lang-active', !isEn).toggleClass('lang-inactive', isEn);
-            $('.lang-en').toggleClass('lang-active', isEn).toggleClass('lang-inactive', !isEn);
-        }
-
         $(function() {
-            updateLangSwitch();
+            CL.updateLangSwitch();
             if (localStorage.getItem('lang') === 'en') {
                 var s = document.createElement('script');
                 s.src = '/static/i18n/en.js';
                 s.onload = function() {
-                    applyLang();
+                    CL.applyLang();
                     document.title = window.i18n.title.model;
                     var currentMonth = $('#monthPicker').val();
                     var currentDate = $('#datePicker').val();
@@ -117,7 +104,7 @@
                 $('#monthLabel, #monthPicker').hide();
                 var date = $('#datePicker').val();
                 if (!date) {
-                    date = new Date().toISOString().slice(0, 10);
+                    date = CL.localDateStr(new Date());
                     $('#datePicker').val(date);
                 }
                 loadDailyModel(date);
@@ -141,8 +128,8 @@
                 loadMonthlyModel(month);
             } else {
                 var now = new Date();
-                var currentMonth = now.toISOString().slice(0, 7);
-                var currentDate = now.toISOString().slice(0, 10);
+                var currentMonth = CL.localMonthStr(now);
+                var currentDate = CL.localDateStr(now);
                 $('#monthPicker').val(currentMonth);
                 $('#datePicker').val(currentDate);
                 loadMonthlyModel(currentMonth);
@@ -164,31 +151,57 @@
         });
 
         function loadMonthlyModel(month) {
-            $("#loadingBox").show();
-            $.get("/api/monthly-model", {month: month}, function(data) {
-                    $("#loadingBox").hide();
+            var initial = CL.getInitialData('monthly-model');
+            if (initial && initial.month === month) {
+                CL.setLoading(false);
+                renderModelChart(initial, month, false);
+            } else {
+                CL.setLoading(true);
+            }
+
+            CL.fetchWithCache('/api/monthly-model', {month: month}, {
+                onSuccess: function(data) {
                     renderModelChart(data, month, false);
-            }).fail(function() {
-                $("#loadingBox").hide();
-                barChart.clear();
-                pieChart.clear();
+                },
+                onError: function() {
+                    CL.showNoData(true);
+                    barChart.clear();
+                    pieChart.clear();
+                }
             });
         }
 
         function loadDailyModel(date) {
-            $("#loadingBox").show();
-            $.get("/api/daily-model", {date: date}, function(data) {
-                    $("#loadingBox").hide();
+            var initial = CL.getInitialData('daily-model');
+            if (initial && initial.month === date) {
+                CL.setLoading(false);
+                renderModelChart(initial, date, true);
+            } else {
+                CL.setLoading(true);
+            }
+
+            CL.fetchWithCache('/api/daily-model', {date: date}, {
+                onSuccess: function(data) {
                     renderModelChart(data, date, true);
-            }).fail(function() {
-                $("#loadingBox").hide();
-                barChart.clear();
-                pieChart.clear();
+                },
+                onError: function() {
+                    CL.showNoData(true);
+                    barChart.clear();
+                    pieChart.clear();
+                }
             });
         }
 
         function renderModelChart(data, period, isDaily) {
             var t = window.i18n;
+            CL.setLoading(false);
+            if (!data || !data.models || data.models.length === 0) {
+                barChart.clear();
+                pieChart.clear();
+                CL.showNoData(true);
+                return;
+            }
+            CL.showNoData(false);
             var modelNames = data.models.map(function(m) { return m.model; });
             var totals = data.models.map(function(m) { return m.total; });
             var chartTitle = isDaily ? t.model.chartTitleDay : t.model.chartTitle;

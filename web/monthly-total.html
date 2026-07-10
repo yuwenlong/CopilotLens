@@ -4,9 +4,13 @@
     <meta charset="UTF-8">
     <title>月度总用量</title>
     <script src="https://cdn.jsdelivr.net/npm/jquery@4.0.0/dist/jquery.min.js"></script>
+    <script>if(typeof jQuery==='undefined')document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/4.0.0/jquery.min.js"><\/script>')</script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@6.1.0/dist/echarts.min.js"></script>
+    <script>if(typeof echarts==='undefined')document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/6.1.0/echarts.min.js"><\/script>')</script>
     <link rel="stylesheet" href="/static/css/style.css?v=1751529600">
     <script src="/static/i18n/zh.js?v=1751529600"></script>
+    <script src="/static/js/common.js?v=1751529600"></script>
+    {{.InitialData}}
 </head>
 <body>
     <nav class="navbar">
@@ -14,7 +18,7 @@
         <a href="/monthly-total" data-i18n="nav.total">月度总用量</a>
         <a href="/monthly-user" data-i18n="nav.user">用户用量</a>
         <a href="/monthly-model" data-i18n="nav.model">模型用量</a>
-        <a class="lang-switch" onclick="toggleLang()"><span class="lang-zh">中</span> | <span class="lang-en">EN</span></a>
+        <a class="lang-switch" onclick="CL.toggleLang()"><span class="lang-zh">中</span> | <span class="lang-en">EN</span></a>
     </nav>
     <div class="container">
         <h1 data-i18n="title.total">月度总用量</h1>
@@ -76,148 +80,147 @@
             requestAnimationFrame(update);
         }
 
-        function loadMonthlyTotal(month) {
-            $("#loadingBox").show();
-            $("#resultBox").hide();
-            $.get("/api/monthly-total", {month: month}, function(data) {
-                    $("#loadingBox").hide();
-                    var t = window.i18n;
-                    $("#heroMonth").text(data.month);
-                    $("#resultBox").show();
-                    $("#noData").hide();
-                    animateNumber(document.getElementById('animatedNumber'), data.total);
-
-                    if (data.daily && data.daily.length > 0) {
-                        $("#dailyChartContainer").show();
-                        if (!dailyChart) dailyChart = echarts.init(document.getElementById('dailyChart'));
-                        dailyChart.resize();
-                        var chartDates = data.daily.slice().reverse().map(function(d) { return d.date.slice(5); });
-                        var chartValues = data.daily.slice().reverse().map(function(d) { return d.total; });
-                        dailyChart.setOption({
-                            title: {
-                                text: data.month + ' ' + t.total.chartTitle,
-                                subtext: t.total.monthTotal + ': ' + data.total.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + ' AI Credits',
-                                left: 'center',
-                                top: 8,
-                                textStyle: { fontSize: 16, fontWeight: 600, color: '#2c3e50' },
-                                subtextStyle: { fontSize: 12, color: '#7f8c8d' }
-                            },
-                            tooltip: {
-                                trigger: 'axis',
-                                backgroundColor: 'rgba(255,255,255,0.96)',
-                                borderColor: '#e0e0e0',
-                                borderWidth: 1,
-                                borderRadius: 8,
-                                shadowBlur: 12,
-                                shadowColor: 'rgba(0,0,0,0.1)',
-                                textStyle: { color: '#333' },
-                                formatter: function(params) {
-                                    var d = params[0];
-                                    return '<div style="font-weight:600;margin-bottom:4px;">' + d.name + '</div>' +
-                                        t.common.credits + ': <b style="color:#2e86c1">' + d.value.toLocaleString(undefined, {minimumFractionDigits:2}) + '</b>';
-                                }
-                            },
-                            grid: { left: 80, right: 40, bottom: 50, top: 80 },
-                            xAxis: {
-                                type: 'category',
-                                data: chartDates,
-                                axisLabel: { rotate: 30, fontSize: 11, color: '#666' },
-                                axisLine: { lineStyle: { color: '#ddd' } },
-                                axisTick: { show: false }
-                            },
-                            yAxis: {
-                                type: 'value',
-                                name: t.common.credits,
-                                nameTextStyle: { color: '#999', fontSize: 11 },
-                                splitLine: { lineStyle: { type: 'dashed', color: '#eee' } },
-                                axisLine: { show: false },
-                                axisTick: { show: false }
-                            },
-                            series: [{
-                                type: 'line',
-                                data: chartValues,
-                                smooth: 0.3,
-                                symbol: 'circle',
-                                symbolSize: 6,
-                                lineStyle: {
-                                    width: 2.5,
-                                    color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-                                        { offset: 0, color: '#2e86c1' },
-                                        { offset: 1, color: '#48c9b0' }
-                                    ]),
-                                    shadowBlur: 8,
-                                    shadowColor: 'rgba(46,134,193,0.3)',
-                                    shadowOffsetY: 4
-                                },
-                                itemStyle: {
-                                    color: '#fff',
-                                    borderColor: '#2e86c1',
-                                    borderWidth: 2
-                                },
-                                emphasis: {
-                                    itemStyle: { symbolSize: 10, borderColor: '#2e86c1', borderWidth: 3 }
-                                },
-                                areaStyle: {
-                                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                                        { offset: 0, color: 'rgba(46,134,193,0.25)' },
-                                        { offset: 0.5, color: 'rgba(46,134,193,0.08)' },
-                                        { offset: 1, color: 'rgba(46,134,193,0)' }
-                                    ])
-                                },
-
-                            }],
-                            animationDuration: 1500,
-                            animationDurationUpdate: 800
-                        }, true);
-
-                        var html = "";
-                        html += "<tr class='total-row'>";
-                        html += "<td>" + t.total.monthTotal + "</td>";
-                        html += "<td class='credits'>" + data.total.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + "</td>";
-                        html += "</tr>";
-                        data.daily.forEach(function(d) {
-                            html += "<tr>";
-                            html += "<td>" + d.date + "</td>";
-                            html += "<td class='credits'>" + d.total.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + "</td>";
-                            html += "</tr>";
-                        });
-                        $("#dailyTableBody").html(html);
-                        $("#dailyDetail").show();
-                    } else {
-                        $("#dailyDetail").hide();
-                        $("#dailyChartContainer").hide();
-                    }
-            }).fail(function() {
-                $("#loadingBox").hide();
+        function renderMonthlyTotal(data) {
+            var t = window.i18n;
+            CL.setLoading(false);
+            if (!data || (!data.total && (!data.daily || data.daily.length === 0))) {
                 $("#resultBox").hide();
-                $("#noData").show();
-            });
+                CL.showNoData(true);
+                return;
+            }
+            CL.showNoData(false);
+            $("#heroMonth").text(data.month);
+            $("#resultBox").show();
+            animateNumber(document.getElementById('animatedNumber'), data.total);
+
+            if (data.daily && data.daily.length > 0) {
+                $("#dailyChartContainer").show();
+                if (!dailyChart) dailyChart = echarts.init(document.getElementById('dailyChart'));
+                dailyChart.resize();
+                var chartDates = data.daily.slice().reverse().map(function(d) { return d.date.slice(5); });
+                var chartValues = data.daily.slice().reverse().map(function(d) { return d.total; });
+                dailyChart.setOption({
+                    title: {
+                        text: data.month + ' ' + t.total.chartTitle,
+                        subtext: t.total.monthTotal + ': ' + data.total.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + ' AI Credits',
+                        left: 'center',
+                        top: 8,
+                        textStyle: { fontSize: 16, fontWeight: 600, color: '#2c3e50' },
+                        subtextStyle: { fontSize: 12, color: '#7f8c8d' }
+                    },
+                    tooltip: {
+                        trigger: 'axis',
+                        backgroundColor: 'rgba(255,255,255,0.96)',
+                        borderColor: '#e0e0e0',
+                        borderWidth: 1,
+                        borderRadius: 8,
+                        shadowBlur: 12,
+                        shadowColor: 'rgba(0,0,0,0.1)',
+                        textStyle: { color: '#333' },
+                        formatter: function(params) {
+                            var d = params[0];
+                            return '<div style="font-weight:600;margin-bottom:4px;">' + d.name + '</div>' +
+                                t.common.credits + ': <b style="color:#2e86c1">' + d.value.toLocaleString(undefined, {minimumFractionDigits:2}) + '</b>';
+                        }
+                    },
+                    grid: { left: 80, right: 40, bottom: 50, top: 80 },
+                    xAxis: {
+                        type: 'category',
+                        data: chartDates,
+                        axisLabel: { rotate: 30, fontSize: 11, color: '#666' },
+                        axisLine: { lineStyle: { color: '#ddd' } },
+                        axisTick: { show: false }
+                    },
+                    yAxis: {
+                        type: 'value',
+                        name: t.common.credits,
+                        nameTextStyle: { color: '#999', fontSize: 11 },
+                        splitLine: { lineStyle: { type: 'dashed', color: '#eee' } },
+                        axisLine: { show: false },
+                        axisTick: { show: false }
+                    },
+                    series: [{
+                        type: 'line',
+                        data: chartValues,
+                        smooth: 0.3,
+                        symbol: 'circle',
+                        symbolSize: 6,
+                        lineStyle: {
+                            width: 2.5,
+                            color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                                { offset: 0, color: '#2e86c1' },
+                                { offset: 1, color: '#48c9b0' }
+                            ]),
+                            shadowBlur: 8,
+                            shadowColor: 'rgba(46,134,193,0.3)',
+                            shadowOffsetY: 4
+                        },
+                        itemStyle: {
+                            color: '#fff',
+                            borderColor: '#2e86c1',
+                            borderWidth: 2
+                        },
+                        emphasis: {
+                            itemStyle: { symbolSize: 10, borderColor: '#2e86c1', borderWidth: 3 }
+                        },
+                        areaStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: 'rgba(46,134,193,0.25)' },
+                                { offset: 0.5, color: 'rgba(46,134,193,0.08)' },
+                                { offset: 1, color: 'rgba(46,134,193,0)' }
+                            ])
+                        }
+                    }],
+                    animationDuration: 1500,
+                    animationDurationUpdate: 800
+                }, true);
+
+                var html = "";
+                html += "<tr class='total-row'>";
+                html += "<td>" + t.total.monthTotal + "</td>";
+                html += "<td class='credits'>" + data.total.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + "</td>";
+                html += "</tr>";
+                data.daily.forEach(function(d) {
+                    html += "<tr>";
+                    html += "<td>" + d.date + "</td>";
+                    html += "<td class='credits'>" + d.total.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + "</td>";
+                    html += "</tr>";
+                });
+                $("#dailyTableBody").html(html);
+                $("#dailyDetail").show();
+            } else {
+                $("#dailyDetail").hide();
+                $("#dailyChartContainer").hide();
+            }
         }
 
-        function toggleLang() {
-            var lang = localStorage.getItem('lang') === 'en' ? 'zh' : 'en';
-            localStorage.setItem('lang', lang);
-            location.reload();
-        }
-        function applyLang() {
-            $('[data-i18n]').each(function() {
-                var key = $(this).data('i18n');
-                var val = key.split('.').reduce(function(o, k) { return o && o[k]; }, window.i18n);
-                if (val) $(this).text(val);
+        function loadMonthlyTotal(month) {
+            var initial = CL.getInitialData('monthly-total');
+            if (initial) {
+                CL.setLoading(false);
+                renderMonthlyTotal(initial);
+            } else {
+                CL.setLoading(true);
+                $("#resultBox").hide();
+            }
+
+            CL.fetchWithCache('/api/monthly-total', {month: month}, {
+                onSuccess: function(data) {
+                    renderMonthlyTotal(data);
+                },
+                onError: function() {
+                    $("#resultBox").hide();
+                    CL.showNoData(true);
+                }
             });
-        }
-        function updateLangSwitch() {
-            var isEn = localStorage.getItem('lang') === 'en';
-            $('.lang-zh').toggleClass('lang-active', !isEn).toggleClass('lang-inactive', isEn);
-            $('.lang-en').toggleClass('lang-active', isEn).toggleClass('lang-inactive', !isEn);
         }
 
         $(function() {
-            updateLangSwitch();
+            CL.updateLangSwitch();
             if (localStorage.getItem('lang') === 'en') {
                 var s = document.createElement('script');
                 s.src = '/static/i18n/en.js';
-                s.onload = function() { applyLang(); document.title = window.i18n.title.total; };
+                s.onload = function() { CL.applyLang(); document.title = window.i18n.title.total; };
                 document.head.appendChild(s);
             } else {
                 document.title = window.i18n.title.total;
@@ -226,7 +229,7 @@
             var params = new URLSearchParams(window.location.search);
             var month = params.get('month');
             if (!month) {
-                month = new Date().toISOString().slice(0, 7);
+                month = CL.localMonthStr(new Date());
             }
             $('#monthPicker').val(month);
             loadMonthlyTotal(month);

@@ -36,8 +36,12 @@ func LoadUsernameMap(dataDir string) map[string]string {
 }
 
 func LoadUsers(dataDir string) []string {
-	if GitHubClient != nil {
-		members, err := GitHubClient.GetOrgMembers()
+	return LoadUsersFromClient(GitHubClient)
+}
+
+func LoadUsersFromClient(c *github.Client) []string {
+	if c != nil {
+		members, err := c.GetOrgMembers()
 		if err == nil && len(members) > 0 {
 			return members
 		}

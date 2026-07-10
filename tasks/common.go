@@ -9,12 +9,14 @@ type ITask interface {
 	Stop()
 }
 
-func Init(cache *github.CacheManager, client *github.Client) {
-	taskList = append(taskList, NewCacheCleanTask(cache))
-	taskList = append(taskList, NewCacheWarmTask(client))
+func Init(cache *github.CacheManager, client *github.Client) *CacheWarmTask {
+	cleanTask := NewCacheCleanTask(cache)
+	warmTask := NewCacheWarmTask(client)
+	taskList = append(taskList, cleanTask, warmTask)
 	for _, t := range taskList {
 		t.Run()
 	}
+	return warmTask
 }
 
 func Stop() {

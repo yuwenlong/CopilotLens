@@ -10,6 +10,7 @@ import (
 type AppConfig struct {
 	Server ServerConfig
 	GitHub GitHubConfig
+	Cache  CacheConfig
 }
 
 type GitHubConfig struct {
@@ -20,6 +21,9 @@ type GitHubConfig struct {
 type ServerConfig struct {
 	Port      string
 	Whitelist []string
+}
+
+type CacheConfig struct {
 }
 
 var appConfig *AppConfig
@@ -33,6 +37,8 @@ func init() {
 	v.SetConfigName("config")
 	v.SetConfigType("toml")
 	v.AddConfigPath("conf")
+
+	v.SetDefault("cache.warm_months", 3)
 
 	if err := v.ReadInConfig(); err != nil {
 		log.Fatal("读取配置失败:", err)

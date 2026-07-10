@@ -5,7 +5,10 @@ import (
 	"time"
 )
 
-const cacheTTL = 120 * time.Minute
+const (
+	cacheTTL     = 120 * time.Minute
+	maxCacheSize = 5000
+)
 
 type cacheEntry struct {
 	data      interface{}
@@ -23,9 +26,14 @@ func NewCacheManager() *CacheManager {
 
 func (cm *CacheManager) Get(key string) (interface{}, bool) {
 	cm.mu.RLock()
-	defer cm.mu.RUnlock()
 	e, ok := cm.entries[key]
+	cm.mu.RUnlock()
 	if !ok || time.Since(e.createdAt) > cacheTTL {
+		if ok {
+			cm.mu.Lock()
+			delete(cm.entries, key)
+			cm.mu.Unlock()
+		}
 		return nil, false
 	}
 	return e.data, true
@@ -34,6 +42,19 @@ func (cm *CacheManager) Get(key string) (interface{}, bool) {
 func (cm *CacheManager) Set(key string, data interface{}) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
+	if len(cm.entries) >= maxCacheSize {
+		var oldestKey string
+		var oldestTime time.Time
+		for k, e := range cm.entries {
+			if oldestKey == "" || e.createdAt.Before(oldestTime) {
+				oldestKey = k
+				oldestTime = e.createdAt
+			}
+		}
+		if oldestKey != "" {
+			delete(cm.entries, oldestKey)
+		}
+	}
 	cm.entries[key] = cacheEntry{data: data, createdAt: time.Now()}
 }
 

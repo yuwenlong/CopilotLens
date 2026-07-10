@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"copilotlens/internal/client"
@@ -28,29 +31,46 @@ func main() {
 	client.GitHubClient = github.NewClient(token, conf.GitHub.Org)
 	log.Printf("GitHub API 已启用，组织: %s", conf.GitHub.Org)
 
-	warmTask := tasks.NewCacheWarmTask(client.GitHubClient)
+	// 缓存清理任务和周期性预热任务先启动
+	warmTask := tasks.Init(client.GitHubClient.Cache, client.GitHubClient)
+
+	// 首次同步预热，完成后再启动 HTTP
 	warmTask.Warm()
-	tasks.Init(client.GitHubClient.Cache, client.GitHubClient)
 
 	r := gin.Default()
 	r.Use(handler.IPWhitelist())
 	r.LoadHTMLGlob("web/*.html")
 	r.Static("/static", "./web/static")
 
-	h := &handler.Handler{DataDir: "data"}
+	h := handler.NewHandler("data", client.GitHubClient)
 	h.RegisterRoutes(r)
 
 	addr := fmt.Sprintf(":%s", conf.Server.Port)
 	log.Printf("服务启动，监听端口 %s", conf.Server.Port)
 
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: r,
+	}
+
 	go func() {
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-		<-sigChan
-		tasks.Stop()
-		log.Println("定时任务已停止")
-		os.Exit(0)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("HTTP 服务启动失败: %v", err)
+		}
 	}()
 
-	r.Run(addr)
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	<-sigChan
+	log.Println("收到终止信号，正在关闭服务...")
+
+	tasks.Stop()
+	log.Println("定时任务已停止")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("HTTP 服务关闭异常: %v", err)
+	}
+	log.Println("HTTP 服务已停止")
 }

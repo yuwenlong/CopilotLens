@@ -40,11 +40,16 @@
 | 🤖 **Model Usage** | Bar chart + pie chart for model distribution analysis |
 | 🔌 **GitHub API** | Automatic data sync via GitHub Billing API (no manual CSV export) |
 | ⚡ **Concurrent Fetching** | Parallel API calls for fast data loading |
-| 💾 **Smart Caching** | 2-hour TTL cache with automatic cleanup and hourly warm-up |
+| 💾 **Smart Caching** | 2-hour TTL cache + aggregated response cache (5 keys) + hourly warm-up |
+| 🖥️ **SSR Instant Render** | Server-side injects first-screen JSON, zero-delay page display |
+| 🔄 **Stale-While-Revalidate** | sessionStorage cache with background refresh, no blank screen on reload |
+| 🛡️ **singleflight** | Prevents duplicate GitHub API calls for the same cache key under concurrent requests |
+| ⚠️ **Rate Limit Protection** | Auto-detects GitHub API quota, throttles warming when limit approached |
 | 🎨 **Loading Animation** | Full-screen overlay with CSS3 ring animation |
 | 🌐 **i18n Support** | Chinese/English toggle with localStorage persistence |
 | 🔒 **IP Whitelist** | Access control with exact IP and CIDR subnet support |
-| 📜 **Process Management** | Start/stop/restart/reload with PID file tracking |
+| 📜 **Process Management** | Start/stop/restart/reload with PID file tracking + graceful shutdown |
+| 🔁 **CDN Fallback** | jQuery/ECharts auto-switch to cdnjs mirror when primary CDN fails |
 
 ---
 
@@ -64,7 +69,7 @@
 
 ```
 CopilotLens/
-├── main.go                          # 🚀 Entry point + GitHub client init
+├── main.go                          # 🚀 Entry point + graceful shutdown + warm-up
 │
 ├── domain/dto/                      # 📦 Data Transfer Objects
 │   ├── copilot.go                   #    CopilotRecord
@@ -78,18 +83,22 @@ CopilotLens/
 │   ├── config/                      #    Configuration (init() auto-load)
 │   │   └── config.go                #    AppConfig + Config() getter
 │   ├── github/                      #    GitHub API client
-│   │   ├── client.go                #    Billing API fetchers
-│   │   └── cache.go                 #    CacheManager (2h TTL, sync.RWMutex)
-│   └── handler/                     #    HTTP handlers
-│       ├── router.go                #    Route registration + IPWhitelist middleware
-│       ├── total.go                 #    MonthlyTotal handler
-│       ├── user.go                  #    MonthlyUser + DailyUser handlers
-│       └── model.go                 #    MonthlyModel + DailyModel handlers
+│   │   ├── client.go                #    Billing API + singleflight + rate limit
+│   │   └── cache.go                 #    CacheManager (2h TTL, RWMutex, LRU 5000)
+│   ├── handler/                     #    HTTP handlers
+│   │   ├── common.go                #    InjectInitialData (SSR JSON injection)
+│   │   ├── render.go                #    renderPage + parseDateOrMonth
+│   │   ├── router.go                #    Route registration + IPWhitelist middleware
+│   │   ├── total.go                 #    MonthlyTotal handler
+│   │   ├── user.go                  #    MonthlyUser + DailyUser handlers
+│   │   └── model.go                 #    MonthlyModel + DailyModel handlers
+│   └── service/                     #    Business logic layer
+│       └── usage.go                 #    UsageService: 5 GetXXX + 5 BuildXXX + singleflight
 │
 ├── tasks/                           # ⏱️ Background tasks
-│   ├── common.go                    #    ITask interface + Init/Stop
+│   ├── common.go                    #    Init/Stop + task registry
 │   ├── cache_clean.go               #    Cache expiration cleanup (10min)
-│   └── cache_warm.go                #    Hourly cache warm-up on the hour
+│   └── cache_warm.go                #    Hourly cache warm-up + rate limit guard
 │
 ├── web/                             # 🎨 Frontend
 │   ├── index.html                   #    Homepage with hero banner
@@ -98,6 +107,7 @@ CopilotLens/
 │   ├── monthly-model.html           #    Model usage charts
 │   └── static/
 │       ├── css/style.css            #    Global styles + loading animation
+│       ├── js/common.js             #    CL module: SSR cache + stale-while-revalidate
 │       └── i18n/
 │           ├── zh.js                #    Chinese translations
 │           └── en.js                #    English translations
@@ -146,7 +156,7 @@ vim bin/conf/config.toml
 
 ```toml
 [server]
-port = "8080"
+port = "8880"
 whitelist = []  # Empty = allow all IPs
 
 [github]
@@ -167,7 +177,7 @@ chmod +x run.sh
 
 ### 4️⃣ Access
 
-Open your browser and visit: **http://localhost:8080**
+Open your browser and visit: **http://localhost:8880**
 
 ---
 
@@ -179,9 +189,12 @@ CopilotLens automatically fetches AI Credits usage data from the GitHub Billing 
 
 1. **Authentication**: Uses GitHub Personal Access Token with `copilot` scope
 2. **Data Source**: `GET /organizations/{org}/settings/billing/ai_credit/usage`
-3. **Auto-sync**: Data is fetched in real-time on each request (fallback when cache misses)
-4. **Caching**: Results cached for 2 hours to reduce API calls
-5. **Warm-up**: A scheduled task pre-fetches the current month/day data every hour on the hour, so most requests hit the cache without calling GitHub API
+3. **Two-tier Caching**: Raw data cache (`monthly:`, `daily:`, `user_monthly:`, `user_daily:`) + aggregated response cache (`resp:monthly_total`, `resp:monthly_user`, etc.) with 2-hour TTL
+4. **singleflight**: Concurrent requests for the same key share one GitHub API call, preventing thundering herd
+5. **SSR Instant Render**: Server injects pre-built JSON into HTML (`{{.InitialData}}`), page renders immediately on load
+6. **Stale-While-Revalidate**: Frontend `common.js` uses sessionStorage for instant display + background refresh
+7. **Warm-up**: On startup, pre-fetches current month data (raw + aggregated). Hourly scheduled task refreshes on the hour
+8. **Rate Limit Protection**: Auto-detects GitHub API quota headers, throttles warm-up when approaching limits
 
 ### Configuration
 
@@ -221,7 +234,7 @@ yyyyyy,yy
 ### Base URL
 
 ```
-http://localhost:8080
+http://localhost:8880
 ```
 
 ### Endpoints
@@ -238,8 +251,8 @@ GET /api/monthly-total?month=YYYY-MM
   "month": "2026-06",
   "total": 185944.03,
   "daily": [
-    {"date": "2026-06-30", "amount": 6429.48},
-    {"date": "2026-06-29", "amount": 6528.43}
+    {"date": "2026-06-30", "total": 6429.48},
+    {"date": "2026-06-29", "total": 6528.43}
   ]
 }
 ```
@@ -336,11 +349,11 @@ window.i18n = {
 
 ### Configuration
 
-Edit `conf/config.toml`:
+Edit `bin/conf/config.toml`:
 
 ```toml
 [server]
-port = "8080"
+port = "8880"
 
 # Empty array = allow all IPs
 whitelist = []

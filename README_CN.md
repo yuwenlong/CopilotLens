@@ -40,11 +40,16 @@
 | 🤖 **模型用量** | 柱状图 + 饼图，分析各模型消耗占比 |
 | 🔌 **GitHub API** | 自动通过 GitHub Billing API 同步数据（无需手动导出 CSV） |
 | ⚡ **并发获取** | 并行 API 调用，快速加载数据 |
-| 💾 **智能缓存** | 2 小时 TTL 缓存 + 自动清理 + 每小时整点预热 |
+| 💾 **智能缓存** | 2h TTL 原始缓存 + 聚合结果缓存（5 个键）+ 每小时整点预热 |
+| 🖥️ **SSR 即时渲染** | 服务端注入首屏 JSON，页面零延迟展示 |
+| 🔄 **Stale-While-Revalidate** | sessionStorage 缓存即时回显 + 后台静默刷新，刷新不白屏 |
+| 🛡️ **singleflight 防穿透** | 并发请求同一 key 只触发一次 GitHub API 调用 |
+| ⚠️ **Rate Limit 保护** | 自动检测 GitHub API 限额头，预热超额自动退避 |
 | 🎨 **加载动画** | 全屏遮罩 + CSS3 三环旋转动画 |
 | 🌐 **国际化** | 中英文一键切换，localStorage 持久化 |
 | 🔒 **IP 白名单** | 支持精确 IP 和 CIDR 网段，灵活访问控制 |
-| 📜 **进程管理** | PID 文件管理，支持 start/stop/restart/reload |
+| 📜 **进程管理** | PID 文件管理，支持 start/stop/restart/reload + 优雅关闭 |
+| 🔁 **CDN 回退** | jQuery/ECharts 主 CDN 失败自动切换 cdnjs 镜像 |
 
 ---
 
@@ -64,7 +69,7 @@
 
 ```
 CopilotLens/
-├── main.go                          # 🚀 入口文件 + GitHub 客户端初始化
+├── main.go                          # 🚀 入口文件 + 优雅关闭 + 缓存预热
 │
 ├── domain/dto/                      # 📦 数据传输对象
 │   ├── copilot.go                   #    CopilotRecord
@@ -78,18 +83,22 @@ CopilotLens/
 │   ├── config/                      #    配置管理（init() 自动加载）
 │   │   └── config.go                #    AppConfig + Config() getter
 │   ├── github/                      #    GitHub API 客户端
-│   │   ├── client.go                #    Billing API 获取器
-│   │   └── cache.go                 #    CacheManager（2h TTL, sync.RWMutex）
-│   └── handler/                     #    HTTP 处理器
-│       ├── router.go                #    路由注册 + IPWhitelist 中间件
-│       ├── total.go                 #    月度总用量 handler
-│       ├── user.go                  #    用户用量 + 日用量 handler
-│       └── model.go                 #    模型用量 + 日用量 handler
+│   │   ├── client.go                #    Billing API + singleflight + rate limit
+│   │   └── cache.go                 #    CacheManager（2h TTL, RWMutex, LRU 5000）
+│   ├── handler/                     #    HTTP 处理器
+│   │   ├── common.go                #    InjectInitialData（SSR JSON 注入）
+│   │   ├── render.go                #    renderPage + parseDateOrMonth
+│   │   ├── router.go                #    路由注册 + IPWhitelist 中间件
+│   │   ├── total.go                 #    月度总用量 handler
+│   │   ├── user.go                  #    用户用量 + 日用量 handler
+│   │   └── model.go                 #    模型用量 + 日用量 handler
+│   └── service/                     #    业务逻辑层
+│       └── usage.go                 #    UsageService：5 个 GetXXX + 5 个 BuildXXX + singleflight
 │
 ├── tasks/                           # ⏱️ 后台任务
-│   ├── common.go                    #    ITask 接口 + Init/Stop
+│   ├── common.go                    #    Init/Stop + 任务注册
 │   ├── cache_clean.go               #    缓存过期清理（10分钟）
-│   └── cache_warm.go                #    每小时整点缓存预热
+│   └── cache_warm.go                #    每小时整点缓存预热 + rate limit 保护
 │
 ├── web/                             # 🎨 前端资源
 │   ├── index.html                   #    首页（Hero Banner + 功能卡片）
@@ -98,6 +107,7 @@ CopilotLens/
 │   ├── monthly-model.html           #    模型用量（柱状图 + 饼图）
 │   └── static/
 │       ├── css/style.css            #    全局样式 + 加载动画
+│       ├── js/common.js             #    CL 模块：SSR 缓存 + stale-while-revalidate
 │       └── i18n/
 │           ├── zh.js                #    中文翻译
 │           └── en.js                #    英文翻译
@@ -146,7 +156,7 @@ vim bin/conf/config.toml
 
 ```toml
 [server]
-port = "8080"
+port = "8880"
 whitelist = []  # 空数组 = 允许所有 IP
 
 [github]
@@ -167,7 +177,7 @@ chmod +x run.sh
 
 ### 4️⃣ 访问
 
-打开浏览器访问：**http://localhost:8080**
+打开浏览器访问：**http://localhost:8880**
 
 ---
 
@@ -179,9 +189,12 @@ CopilotLens 通过 GitHub Billing API 自动获取 AI Credits 用量数据：
 
 1. **认证方式**：使用具有 `copilot` 权限的 GitHub Personal Access Token
 2. **数据来源**：`GET /organizations/{org}/settings/billing/ai_credit/usage`
-3. **自动同步**：缓存未命中时实时获取数据
-4. **缓存机制**：结果缓存 2 小时，减少 API 调用
-5. **缓存预热**：定时任务在每个整点预拉取当前月/当前日数据，使大部分请求直接命中缓存，不再调用 GitHub API
+3. **双层缓存**：原始数据缓存（`monthly:`、`daily:`、`user_monthly:`、`user_daily:`）+ 聚合结果缓存（`resp:monthly_total`、`resp:monthly_user` 等），2h TTL
+4. **singleflight 防穿透**：并发请求同一 key 只触发一次 GitHub API 调用，防止缓存击穿
+5. **SSR 即时渲染**：服务端将预构建的 JSON 注入 HTML（`{{.InitialData}}`），页面加载即渲染
+6. **Stale-While-Revalidate**：前端 `common.js` 使用 sessionStorage 即时回显 + 后台静默刷新
+7. **缓存预热**：启动时同步预热当月数据（原始 + 聚合），每小时整点定时任务刷新
+8. **Rate Limit 保护**：自动检测 GitHub API 限额头，预热接近限额时自动退避
 
 ### 配置方式
 
@@ -221,7 +234,7 @@ yyyyyy,yy
 ### 基础 URL
 
 ```
-http://localhost:8080
+http://localhost:8880
 ```
 
 ### 接口列表
@@ -238,8 +251,8 @@ GET /api/monthly-total?month=YYYY-MM
   "month": "2026-06",
   "total": 185944.03,
   "daily": [
-    {"date": "2026-06-30", "amount": 6429.48},
-    {"date": "2026-06-29", "amount": 6528.43}
+    {"date": "2026-06-30", "total": 6429.48},
+    {"date": "2026-06-29", "total": 6528.43}
   ]
 }
 ```
@@ -336,11 +349,11 @@ window.i18n = {
 
 ### 配置方式
 
-编辑 `conf/config.toml`：
+编辑 `bin/conf/config.toml`：
 
 ```toml
 [server]
-port = "8080"
+port = "8880"
 
 # 空数组 = 允许所有 IP
 whitelist = []

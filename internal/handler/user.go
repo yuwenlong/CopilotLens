@@ -2,16 +2,14 @@ package handler
 
 import (
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"copilotlens/domain/dto"
-	"copilotlens/internal/client"
 )
 
 func (h *Handler) MonthlyUser(c *gin.Context) {
+	c.Header("Cache-Control", "no-cache")
 	month := c.Query("month")
 	if len(month) != 7 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "month format must be YYYY-MM"})
@@ -19,29 +17,28 @@ func (h *Handler) MonthlyUser(c *gin.Context) {
 	}
 
 	parts := strings.Split(month, "-")
-	year, _ := strconv.Atoi(parts[0])
-	mon, _ := strconv.Atoi(parts[1])
-
-	usernameMap := client.LoadUsernameMap(h.DataDir)
-	users := client.LoadUsers(h.DataDir)
-
-	var allUsers []dto.UserUsage
-	for _, username := range users {
-		items, err := client.GitHubClient.GetUserMonthlyUsage(username, year, mon)
-		if err != nil || len(items) == 0 {
-			continue
-		}
-		allUsers = append(allUsers, itemsToUserUsage(username, usernameMap, items))
+	year, err := strconv.Atoi(parts[0])
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid year"})
+		return
+	}
+	mon, err := strconv.Atoi(parts[1])
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid month"})
+		return
 	}
 
-	sort.Slice(allUsers, func(i, j int) bool {
-		return allUsers[i].Total > allUsers[j].Total
-	})
+	resp, err := h.usage.GetMonthlyUser(year, mon)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
-	c.JSON(http.StatusOK, dto.MonthlyUserResponse{Month: month, Users: allUsers})
+	c.JSON(http.StatusOK, resp)
 }
 
 func (h *Handler) DailyUser(c *gin.Context) {
+	c.Header("Cache-Control", "no-cache")
 	date := c.Query("date")
 	if len(date) != 10 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "date format must be YYYY-MM-DD"})
@@ -49,25 +46,27 @@ func (h *Handler) DailyUser(c *gin.Context) {
 	}
 
 	parts := strings.Split(date, "-")
-	year, _ := strconv.Atoi(parts[0])
-	mon, _ := strconv.Atoi(parts[1])
-	day, _ := strconv.Atoi(parts[2])
-
-	usernameMap := client.LoadUsernameMap(h.DataDir)
-	users := client.LoadUsers(h.DataDir)
-
-	var allUsers []dto.UserUsage
-	for _, username := range users {
-		items, err := client.GitHubClient.GetUserDailyUsage(username, year, mon, day)
-		if err != nil || len(items) == 0 {
-			continue
-		}
-		allUsers = append(allUsers, itemsToUserUsage(username, usernameMap, items))
+	year, err := strconv.Atoi(parts[0])
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid year"})
+		return
+	}
+	mon, err := strconv.Atoi(parts[1])
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid month"})
+		return
+	}
+	day, err := strconv.Atoi(parts[2])
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid day"})
+		return
 	}
 
-	sort.Slice(allUsers, func(i, j int) bool {
-		return allUsers[i].Total > allUsers[j].Total
-	})
+	resp, err := h.usage.GetDailyUser(year, mon, day)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
-	c.JSON(http.StatusOK, dto.MonthlyUserResponse{Month: date, Users: allUsers})
+	c.JSON(http.StatusOK, resp)
 }
