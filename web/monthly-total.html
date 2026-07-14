@@ -197,7 +197,7 @@
         function loadMonthlyTotal(month) {
             var initial = CL.getInitialData('monthly-total');
             var hasInitial = false;
-            if (initial) {
+            if (initial && initial.month === month) {
                 renderMonthlyTotal(initial);
                 hasInitial = true;
             }
