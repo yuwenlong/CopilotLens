@@ -31,11 +31,8 @@ func main() {
 	client.GitHubClient = github.NewClient(token, conf.GitHub.Org)
 	log.Printf("GitHub API 已启用，组织: %s", conf.GitHub.Org)
 
-	// 缓存清理任务和周期性预热任务先启动
-	warmTask := tasks.Init(client.GitHubClient.Cache, client.GitHubClient)
-
-	// 首次同步预热，完成后再启动 HTTP
-	warmTask.Warm()
+	// 缓存清理任务和周期性预热任务先启动（Run() 内部首次立即预热，不阻塞 HTTP）
+	tasks.Init(client.GitHubClient.Cache, client.GitHubClient)
 
 	r := gin.Default()
 	r.Use(handler.IPWhitelist())
