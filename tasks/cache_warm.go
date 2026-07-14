@@ -16,8 +16,6 @@ const (
 )
 
 type CacheWarmTask struct {
-	mu     sync.Mutex
-	ticker *time.Ticker
 	client *github.Client
 	conf   *config.AppConfig
 	done   chan struct{}
@@ -43,22 +41,10 @@ func (t *CacheWarmTask) Run() {
 			t.retryWarm(0)
 		}
 
-		now := time.Now()
-		nextHour := now.Truncate(time.Hour).Add(time.Hour)
-		select {
-		case <-time.After(time.Until(nextHour)):
-		case <-t.done:
-			return
-		}
-
-		t.Warm()
-
-		t.mu.Lock()
-		t.ticker = time.NewTicker(1 * time.Hour)
-		t.mu.Unlock()
 		for {
+			next := time.Now().Truncate(time.Hour).Add(time.Hour)
 			select {
-			case <-t.ticker.C:
+			case <-time.After(time.Until(next)):
 				t.Warm()
 			case <-t.done:
 				return
@@ -69,11 +55,6 @@ func (t *CacheWarmTask) Run() {
 
 func (t *CacheWarmTask) Stop() {
 	close(t.done)
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.ticker != nil {
-		t.ticker.Stop()
-	}
 }
 
 func (t *CacheWarmTask) Warm() bool {

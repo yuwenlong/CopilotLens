@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -18,9 +20,35 @@ import (
 	"copilotlens/tasks"
 )
 
+type dailyWriter struct {
+	dir     string
+	curDate string
+	file    *os.File
+}
+
+func (w *dailyWriter) Write(p []byte) (n int, err error) {
+	today := time.Now().Format("2006-01-02")
+	if today != w.curDate {
+		if w.file != nil {
+			w.file.Close()
+		}
+		_ = os.MkdirAll(w.dir, 0755)
+		f, err := os.OpenFile(filepath.Join(w.dir, "copilotlens-"+today+".log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			return 0, err
+		}
+		w.file = f
+		w.curDate = today
+	}
+	return w.file.Write(p)
+}
+
 var conf = config.Config()
 
 func main() {
+	dw := &dailyWriter{dir: "logs"}
+	log.SetOutput(io.MultiWriter(os.Stderr, dw))
+	gin.DefaultWriter = io.MultiWriter(os.Stdout, dw)
 	token := conf.GitHub.Token
 	if token == "" {
 		token = os.Getenv("GITHUB_TOKEN")
