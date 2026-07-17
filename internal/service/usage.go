@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"sync"
 	"time"
 
 	"copilotlens/domain/dto"
@@ -59,6 +60,23 @@ func (s *UsageService) GetMonthlyTotal(year, month int) (*dto.MonthlyTotalRespon
 		if v, ok := s.client.Cache.Get(key); ok {
 			return v.(*dto.MonthlyTotalResponse), nil
 		}
+		resp, err := s.BuildMonthlyTotal(year, month)
+		if err != nil {
+			return nil, err
+		}
+		s.client.Cache.Set(key, resp)
+		return resp, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.(*dto.MonthlyTotalResponse), nil
+}
+
+// RefreshMonthlyTotal 强制重建月度总用量聚合并覆盖缓存（预热用，失败保留旧值）。
+func (s *UsageService) RefreshMonthlyTotal(year, month int) (*dto.MonthlyTotalResponse, error) {
+	key := MonthlyTotalCacheKey(year, month)
+	v, err, _ := s.sf.Do(key, func() (interface{}, error) {
 		resp, err := s.BuildMonthlyTotal(year, month)
 		if err != nil {
 			return nil, err
@@ -135,22 +153,55 @@ func (s *UsageService) GetMonthlyUser(year, month int) (*dto.MonthlyUserResponse
 	return v.(*dto.MonthlyUserResponse), nil
 }
 
+// RefreshMonthlyUser 强制重建月度用户用量聚合并覆盖缓存（预热用）。
+func (s *UsageService) RefreshMonthlyUser(year, month int) (*dto.MonthlyUserResponse, error) {
+	key := MonthlyUserCacheKey(year, month)
+	v, err, _ := s.sf.Do(key, func() (interface{}, error) {
+		resp, err := s.BuildMonthlyUser(year, month)
+		if err != nil {
+			return nil, err
+		}
+		s.client.Cache.Set(key, resp)
+		return resp, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.(*dto.MonthlyUserResponse), nil
+}
+
 func (s *UsageService) BuildMonthlyUser(year, month int) (*dto.MonthlyUserResponse, error) {
 	usernameMap := client.LoadUsernameMap(s.DataDir)
 	users := client.LoadUsersFromClient(s.client)
 
+	sem := make(chan struct{}, 20)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
 	allUsers := make([]dto.UserUsage, 0)
 	for _, username := range users {
-		items, err := s.client.GetUserMonthlyUsage(username, year, month)
-		if err != nil {
-			log.Printf("BuildMonthlyUser: 获取用户 %s 月用量失败: %v", username, err)
-			continue
-		}
-		if len(items) == 0 {
-			continue
-		}
-		allUsers = append(allUsers, itemsToUserUsage(username, usernameMap, items))
+		wg.Add(1)
+		go func(u string) {
+			defer wg.Done()
+			if s.client.ShouldThrottle(50) {
+				return
+			}
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			items, err := s.client.GetUserMonthlyUsage(u, year, month)
+			if err != nil {
+				log.Printf("BuildMonthlyUser: 获取用户 %s 月用量失败: %v", u, err)
+				return
+			}
+			if len(items) == 0 {
+				return
+			}
+			uu := itemsToUserUsage(u, usernameMap, items)
+			mu.Lock()
+			allUsers = append(allUsers, uu)
+			mu.Unlock()
+		}(username)
 	}
+	wg.Wait()
 
 	sort.Slice(allUsers, func(i, j int) bool {
 		return allUsers[i].Total > allUsers[j].Total
@@ -184,22 +235,55 @@ func (s *UsageService) GetDailyUser(year, month, day int) (*dto.MonthlyUserRespo
 	return v.(*dto.MonthlyUserResponse), nil
 }
 
+// RefreshDailyUser 强制重建日度用户用量聚合并覆盖缓存（预热用）。
+func (s *UsageService) RefreshDailyUser(year, month, day int) (*dto.MonthlyUserResponse, error) {
+	key := DailyUserCacheKey(year, month, day)
+	v, err, _ := s.sf.Do(key, func() (interface{}, error) {
+		resp, err := s.BuildDailyUser(year, month, day)
+		if err != nil {
+			return nil, err
+		}
+		s.client.Cache.Set(key, resp)
+		return resp, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.(*dto.MonthlyUserResponse), nil
+}
+
 func (s *UsageService) BuildDailyUser(year, month, day int) (*dto.MonthlyUserResponse, error) {
 	usernameMap := client.LoadUsernameMap(s.DataDir)
 	users := client.LoadUsersFromClient(s.client)
 
+	sem := make(chan struct{}, 20)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
 	allUsers := make([]dto.UserUsage, 0)
 	for _, username := range users {
-		items, err := s.client.GetUserDailyUsage(username, year, month, day)
-		if err != nil {
-			log.Printf("BuildDailyUser: 获取用户 %s 日用量 %04d-%02d-%02d 失败: %v", username, year, month, day, err)
-			continue
-		}
-		if len(items) == 0 {
-			continue
-		}
-		allUsers = append(allUsers, itemsToUserUsage(username, usernameMap, items))
+		wg.Add(1)
+		go func(u string) {
+			defer wg.Done()
+			if s.client.ShouldThrottle(50) {
+				return
+			}
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			items, err := s.client.GetUserDailyUsage(u, year, month, day)
+			if err != nil {
+				log.Printf("BuildDailyUser: 获取用户 %s 日用量 %04d-%02d-%02d 失败: %v", u, year, month, day, err)
+				return
+			}
+			if len(items) == 0 {
+				return
+			}
+			uu := itemsToUserUsage(u, usernameMap, items)
+			mu.Lock()
+			allUsers = append(allUsers, uu)
+			mu.Unlock()
+		}(username)
 	}
+	wg.Wait()
 
 	sort.Slice(allUsers, func(i, j int) bool {
 		return allUsers[i].Total > allUsers[j].Total
@@ -220,6 +304,23 @@ func (s *UsageService) GetMonthlyModel(year, month int) (*dto.MonthlyModelRespon
 		if v, ok := s.client.Cache.Get(key); ok {
 			return v.(*dto.MonthlyModelResponse), nil
 		}
+		resp, err := s.BuildMonthlyModel(year, month)
+		if err != nil {
+			return nil, err
+		}
+		s.client.Cache.Set(key, resp)
+		return resp, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.(*dto.MonthlyModelResponse), nil
+}
+
+// RefreshMonthlyModel 强制重建月度模型用量聚合并覆盖缓存（预热用）。
+func (s *UsageService) RefreshMonthlyModel(year, month int) (*dto.MonthlyModelResponse, error) {
+	key := MonthlyModelCacheKey(year, month)
+	v, err, _ := s.sf.Do(key, func() (interface{}, error) {
 		resp, err := s.BuildMonthlyModel(year, month)
 		if err != nil {
 			return nil, err
@@ -254,6 +355,23 @@ func (s *UsageService) GetDailyModel(year, month, day int) (*dto.MonthlyModelRes
 		if v, ok := s.client.Cache.Get(key); ok {
 			return v.(*dto.MonthlyModelResponse), nil
 		}
+		resp, err := s.BuildDailyModel(year, month, day)
+		if err != nil {
+			return nil, err
+		}
+		s.client.Cache.Set(key, resp)
+		return resp, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.(*dto.MonthlyModelResponse), nil
+}
+
+// RefreshDailyModel 强制重建日度模型用量聚合并覆盖缓存（预热用）。
+func (s *UsageService) RefreshDailyModel(year, month, day int) (*dto.MonthlyModelResponse, error) {
+	key := DailyModelCacheKey(year, month, day)
+	v, err, _ := s.sf.Do(key, func() (interface{}, error) {
 		resp, err := s.BuildDailyModel(year, month, day)
 		if err != nil {
 			return nil, err

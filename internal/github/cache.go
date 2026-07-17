@@ -58,6 +58,15 @@ func (cm *CacheManager) Set(key string, data interface{}) {
 	cm.entries[key] = cacheEntry{data: data, createdAt: time.Now()}
 }
 
+// Touch 刷新未过期条目的创建时间，实现续命；已过期或不存在则不处理。
+func (cm *CacheManager) Touch(key string) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	if e, ok := cm.entries[key]; ok && time.Since(e.createdAt) <= cacheTTL {
+		cm.entries[key] = cacheEntry{data: e.data, createdAt: time.Now()}
+	}
+}
+
 func (cm *CacheManager) CleanExpired() int {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()

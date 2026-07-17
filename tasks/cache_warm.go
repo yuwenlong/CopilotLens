@@ -60,7 +60,7 @@ func (t *CacheWarmTask) Stop() {
 func (t *CacheWarmTask) Warm() bool {
 	log.Println("开始缓存预热...")
 	start := time.Now()
-	now := time.Now().UTC()
+	now := time.Now()
 
 	t.client.CheckRateLimit()
 
@@ -117,7 +117,7 @@ func (t *CacheWarmTask) warmMonth(year, month, today int, users []string) {
 		defer wg.Done()
 		sem <- struct{}{}
 		defer func() { <-sem }()
-		if _, err := t.client.GetMonthlyUsage(year, month); err != nil {
+		if _, err := t.client.RefreshMonthlyUsage(year, month); err != nil {
 			log.Printf("预热月度用量 %04d-%02d 失败: %v", year, month, err)
 		}
 	}()
@@ -132,8 +132,12 @@ func (t *CacheWarmTask) warmMonth(year, month, today int, users []string) {
 			}
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			if _, err := t.client.GetDailyUsage(year, month, d); err != nil {
-				log.Printf("预热每日用量 %04d-%02d-%02d 失败: %v", year, month, d, err)
+			if d == today {
+				if _, err := t.client.RefreshDailyUsage(year, month, d); err != nil {
+					log.Printf("预热每日用量 %04d-%02d-%02d 失败: %v", year, month, d, err)
+				}
+			} else {
+				t.client.EnsureDailyUsage(year, month, d)
 			}
 		}(day)
 	}
@@ -148,7 +152,7 @@ func (t *CacheWarmTask) warmMonth(year, month, today int, users []string) {
 			}
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			if _, err := t.client.GetUserMonthlyUsage(u, year, month); err != nil {
+			if _, err := t.client.RefreshUserMonthlyUsage(u, year, month); err != nil {
 				log.Printf("预热用户 %s 月用量 %04d-%02d 失败: %v", u, year, month, err)
 			}
 		}(username)
@@ -164,7 +168,7 @@ func (t *CacheWarmTask) warmMonth(year, month, today int, users []string) {
 			}
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			if _, err := t.client.GetUserDailyUsage(u, year, month, today); err != nil {
+			if _, err := t.client.RefreshUserDailyUsage(u, year, month, today); err != nil {
 				log.Printf("预热用户 %s 日用量 %04d-%02d-%02d 失败: %v", u, year, month, today, err)
 			}
 		}(username)
@@ -175,19 +179,19 @@ func (t *CacheWarmTask) warmMonth(year, month, today int, users []string) {
 	// Phase 2: 聚合缓存构建
 	svc := service.NewUsageService(t.client, "data")
 
-	if _, err := svc.GetMonthlyTotal(year, month); err != nil {
+	if _, err := svc.RefreshMonthlyTotal(year, month); err != nil {
 		log.Printf("聚合 monthly_total 失败: %v", err)
 	}
-	if _, err := svc.GetMonthlyUser(year, month); err != nil {
+	if _, err := svc.RefreshMonthlyUser(year, month); err != nil {
 		log.Printf("聚合 monthly_user 失败: %v", err)
 	}
-	if _, err := svc.GetMonthlyModel(year, month); err != nil {
+	if _, err := svc.RefreshMonthlyModel(year, month); err != nil {
 		log.Printf("聚合 monthly_model 失败: %v", err)
 	}
-	if _, err := svc.GetDailyUser(year, month, today); err != nil {
+	if _, err := svc.RefreshDailyUser(year, month, today); err != nil {
 		log.Printf("聚合 daily_user 失败: %v", err)
 	}
-	if _, err := svc.GetDailyModel(year, month, today); err != nil {
+	if _, err := svc.RefreshDailyModel(year, month, today); err != nil {
 		log.Printf("聚合 daily_model 失败: %v", err)
 	}
 

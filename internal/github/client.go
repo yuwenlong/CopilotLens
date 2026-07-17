@@ -128,136 +128,140 @@ func (c *Client) buildURL(path string, params map[string]string) string {
 	return u
 }
 
-func (c *Client) GetMonthlyUsage(year, month int) ([]UsageItem, error) {
-	key := fmt.Sprintf("monthly:%d:%d", year, month)
-	if cached, ok := c.Cache.Get(key); ok {
-		return cached.([]UsageItem), nil
+// fetchUsage 直接请求 GitHub billing API，不读写缓存。
+func (c *Client) fetchUsage(params map[string]string) ([]UsageItem, error) {
+	url := c.buildURL(fmt.Sprintf("/organizations/%s/settings/billing/ai_credit/usage", c.org), params)
+	body, err := c.doRequest(url)
+	if err != nil {
+		return nil, err
 	}
+	var resp BillingResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
+	}
+	return resp.UsageItems, nil
+}
 
-	v, err, _ := c.sf.Do(key, func() (interface{}, error) {
+// getUsage 统一缓存读取与拉取。force=true 时跳过缓存检查强制重拉，成功后覆盖缓存（失败保留旧值）。
+func (c *Client) getUsage(key string, params map[string]string, force bool) ([]UsageItem, error) {
+	if !force {
 		if cached, ok := c.Cache.Get(key); ok {
 			return cached.([]UsageItem), nil
 		}
-		params := map[string]string{
-			"year":  fmt.Sprintf("%d", year),
-			"month": fmt.Sprintf("%d", month),
+	}
+	v, err, _ := c.sf.Do(key, func() (interface{}, error) {
+		if !force {
+			if cached, ok := c.Cache.Get(key); ok {
+				return cached.([]UsageItem), nil
+			}
 		}
-		url := c.buildURL(fmt.Sprintf("/organizations/%s/settings/billing/ai_credit/usage", c.org), params)
-		body, err := c.doRequest(url)
+		items, err := c.fetchUsage(params)
 		if err != nil {
 			return nil, err
 		}
-		var resp BillingResponse
-		if err := json.Unmarshal(body, &resp); err != nil {
-			return nil, err
-		}
-		c.Cache.Set(key, resp.UsageItems)
-		return resp.UsageItems, nil
+		c.Cache.Set(key, items)
+		return items, nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	return v.([]UsageItem), nil
+}
+
+func (c *Client) GetMonthlyUsage(year, month int) ([]UsageItem, error) {
+	key := fmt.Sprintf("monthly:%d:%d", year, month)
+	params := map[string]string{
+		"year":  fmt.Sprintf("%d", year),
+		"month": fmt.Sprintf("%d", month),
+	}
+	return c.getUsage(key, params, false)
+}
+
+// RefreshMonthlyUsage 强制重拉当月用量并覆盖缓存（预热用，拉取失败保留旧值）。
+func (c *Client) RefreshMonthlyUsage(year, month int) ([]UsageItem, error) {
+	key := fmt.Sprintf("monthly:%d:%d", year, month)
+	params := map[string]string{
+		"year":  fmt.Sprintf("%d", year),
+		"month": fmt.Sprintf("%d", month),
+	}
+	return c.getUsage(key, params, true)
 }
 
 func (c *Client) GetUserMonthlyUsage(username string, year, month int) ([]UsageItem, error) {
 	key := fmt.Sprintf("user_monthly:%s:%d:%d", username, year, month)
-	if cached, ok := c.Cache.Get(key); ok {
-		return cached.([]UsageItem), nil
+	params := map[string]string{
+		"year":  fmt.Sprintf("%d", year),
+		"month": fmt.Sprintf("%d", month),
+		"user":  username,
 	}
+	return c.getUsage(key, params, false)
+}
 
-	v, err, _ := c.sf.Do(key, func() (interface{}, error) {
-		if cached, ok := c.Cache.Get(key); ok {
-			return cached.([]UsageItem), nil
-		}
-		params := map[string]string{
-			"year":  fmt.Sprintf("%d", year),
-			"month": fmt.Sprintf("%d", month),
-			"user":  username,
-		}
-		url := c.buildURL(fmt.Sprintf("/organizations/%s/settings/billing/ai_credit/usage", c.org), params)
-		body, err := c.doRequest(url)
-		if err != nil {
-			return nil, err
-		}
-		var resp BillingResponse
-		if err := json.Unmarshal(body, &resp); err != nil {
-			return nil, err
-		}
-		c.Cache.Set(key, resp.UsageItems)
-		return resp.UsageItems, nil
-	})
-	if err != nil {
-		return nil, err
+// RefreshUserMonthlyUsage 强制重拉用户月用量并覆盖缓存（预热用）。
+func (c *Client) RefreshUserMonthlyUsage(username string, year, month int) ([]UsageItem, error) {
+	key := fmt.Sprintf("user_monthly:%s:%d:%d", username, year, month)
+	params := map[string]string{
+		"year":  fmt.Sprintf("%d", year),
+		"month": fmt.Sprintf("%d", month),
+		"user":  username,
 	}
-	return v.([]UsageItem), nil
+	return c.getUsage(key, params, true)
 }
 
 func (c *Client) GetDailyUsage(year, month, day int) ([]UsageItem, error) {
 	key := fmt.Sprintf("daily:%d:%d:%d", year, month, day)
-	if cached, ok := c.Cache.Get(key); ok {
-		return cached.([]UsageItem), nil
+	params := map[string]string{
+		"year":  fmt.Sprintf("%d", year),
+		"month": fmt.Sprintf("%d", month),
+		"day":   fmt.Sprintf("%d", day),
 	}
+	return c.getUsage(key, params, false)
+}
 
-	v, err, _ := c.sf.Do(key, func() (interface{}, error) {
-		if cached, ok := c.Cache.Get(key); ok {
-			return cached.([]UsageItem), nil
-		}
-		params := map[string]string{
-			"year":  fmt.Sprintf("%d", year),
-			"month": fmt.Sprintf("%d", month),
-			"day":   fmt.Sprintf("%d", day),
-		}
-		url := c.buildURL(fmt.Sprintf("/organizations/%s/settings/billing/ai_credit/usage", c.org), params)
-		body, err := c.doRequest(url)
-		if err != nil {
-			return nil, err
-		}
-		var resp BillingResponse
-		if err := json.Unmarshal(body, &resp); err != nil {
-			return nil, err
-		}
-		c.Cache.Set(key, resp.UsageItems)
-		return resp.UsageItems, nil
-	})
-	if err != nil {
-		return nil, err
+// RefreshDailyUsage 强制重拉某日用量并覆盖缓存（用于"今天"，数据仍在变化）。
+func (c *Client) RefreshDailyUsage(year, month, day int) ([]UsageItem, error) {
+	key := fmt.Sprintf("daily:%d:%d:%d", year, month, day)
+	params := map[string]string{
+		"year":  fmt.Sprintf("%d", year),
+		"month": fmt.Sprintf("%d", month),
+		"day":   fmt.Sprintf("%d", day),
 	}
-	return v.([]UsageItem), nil
+	return c.getUsage(key, params, true)
+}
+
+// EnsureDailyUsage 命中则 Touch 续命，未命中则正常拉取（用于历史天，内容不变不重拉）。
+func (c *Client) EnsureDailyUsage(year, month, day int) {
+	key := fmt.Sprintf("daily:%d:%d:%d", year, month, day)
+	if _, ok := c.Cache.Get(key); ok {
+		c.Cache.Touch(key)
+		return
+	}
+	if _, err := c.GetDailyUsage(year, month, day); err != nil {
+		log.Printf("EnsureDailyUsage %04d-%02d-%02d 拉取失败: %v", year, month, day, err)
+	}
 }
 
 func (c *Client) GetUserDailyUsage(username string, year, month, day int) ([]UsageItem, error) {
 	key := fmt.Sprintf("user_daily:%s:%d:%d:%d", username, year, month, day)
-	if cached, ok := c.Cache.Get(key); ok {
-		return cached.([]UsageItem), nil
+	params := map[string]string{
+		"year":  fmt.Sprintf("%d", year),
+		"month": fmt.Sprintf("%d", month),
+		"day":   fmt.Sprintf("%d", day),
+		"user":  username,
 	}
+	return c.getUsage(key, params, false)
+}
 
-	v, err, _ := c.sf.Do(key, func() (interface{}, error) {
-		if cached, ok := c.Cache.Get(key); ok {
-			return cached.([]UsageItem), nil
-		}
-		params := map[string]string{
-			"year":  fmt.Sprintf("%d", year),
-			"month": fmt.Sprintf("%d", month),
-			"day":   fmt.Sprintf("%d", day),
-			"user":  username,
-		}
-		url := c.buildURL(fmt.Sprintf("/organizations/%s/settings/billing/ai_credit/usage", c.org), params)
-		body, err := c.doRequest(url)
-		if err != nil {
-			return nil, err
-		}
-		var resp BillingResponse
-		if err := json.Unmarshal(body, &resp); err != nil {
-			return nil, err
-		}
-		c.Cache.Set(key, resp.UsageItems)
-		return resp.UsageItems, nil
-	})
-	if err != nil {
-		return nil, err
+// RefreshUserDailyUsage 强制重拉用户日用量并覆盖缓存（预热用）。
+func (c *Client) RefreshUserDailyUsage(username string, year, month, day int) ([]UsageItem, error) {
+	key := fmt.Sprintf("user_daily:%s:%d:%d:%d", username, year, month, day)
+	params := map[string]string{
+		"year":  fmt.Sprintf("%d", year),
+		"month": fmt.Sprintf("%d", month),
+		"day":   fmt.Sprintf("%d", day),
+		"user":  username,
 	}
-	return v.([]UsageItem), nil
+	return c.getUsage(key, params, true)
 }
 
 func (c *Client) GetOrgMembers() ([]string, error) {
